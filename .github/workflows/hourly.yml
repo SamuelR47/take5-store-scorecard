@@ -6,8 +6,8 @@ on:
     # GitHub cron is in UTC. Central open hours (7a-8p) fall in ~12:00-02:00 UTC
     # across the year (CST/CDT). We schedule generously and let scraper.py
     # decide, in Central time, whether stores are actually open (DST-proof).
-    - cron: "0 12-23 * * *"
-    - cron: "0 0-2 * * *"
+    - cron: "17,47 12-23 * * *"
+    - cron: "17,47 0-2 * * *"
 
 jobs:
   pull:
