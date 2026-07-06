@@ -13,7 +13,7 @@ Config via environment variables (see .env.example):
   OUTPUT_DIR                      where raw/parsed files go (default "Hourly Data Pull")
   FORCE_RUN=1                     bypass the open-hours gate (for manual/testing)
 """
-import os, sys, json, time, datetime as dt
+import os, re, sys, json, time, datetime as dt
 from zoneinfo import ZoneInfo
 
 import requests
@@ -56,18 +56,31 @@ def login(user, password):
 
 
 def fetch_report_text(session, store):
-    """Fetch a store's report and return plain text for the parser."""
+    """Fetch a store's report and return clean text for the parser.
+
+    AutoPoll serves the report as: a small header <table> (date/store/city in
+    cells RepDate1 / StoreNum1 / StoreCity1) followed by a monospace <pre> that
+    holds the columnar body. We rebuild a single clean header line + the full
+    page text so the parser (built for the plain-text layout) works unchanged.
+    """
     url = REPORT_URL.format(store=store)
     r = session.get(url, timeout=30)
     r.raise_for_status()
     if "/Account/LogOn" in r.url:
         raise PermissionError("session expired")
     soup = BeautifulSoup(r.text, "html.parser")
-    pre = soup.find("pre")
-    text = pre.get_text("\n") if pre else soup.get_text("\n")
-    if "CURRENT SALES REPORT" not in text:
+
+    # Sanity: this must actually be the report page.
+    if not soup.find(id="P1") and not re.search(r"CURRENT\s+SALES\s+REPORT", r.text, re.I):
         raise ValueError("report body not found (page layout may have changed)")
-    return text
+
+    def cell(cid):
+        el = soup.find(id=cid)
+        return el.get_text(" ", strip=True) if el else ""
+
+    header = f"{cell('RepDate1')} {cell('StoreNum1')} {cell('StoreCity1')} Page 1"
+    body = soup.get_text("\n")
+    return f"CURRENT SALES REPORT\n{header}\n{body}"
 
 
 def save_local(out_dir, store, data, raw_text, now):
