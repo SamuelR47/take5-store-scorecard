@@ -17,8 +17,8 @@ import streamlit as st
 import plotly.graph_objects as go
 
 CENTRAL = ZoneInfo("America/Chicago")
-STORE_CODES = ["1512", "1515"]
-CITY = {"1512": "Jefferson City", "1515": "Columbia"}
+STORE_CODES = ["1507", "1512", "1515"]
+CITY = {"1507": "Cedar Rapids", "1512": "Jefferson City", "1515": "Columbia"}
 HOURS = {0: (7, 20), 1: (7, 20), 2: (7, 20), 3: (7, 20), 4: (7, 20), 5: (7, 18), 6: (9, 17)}
 DOW = {0: "Mon", 1: "Tues", 2: "Wed", 3: "Thurs", 4: "Fri", 5: "Sat", 6: "Sun"}
 
