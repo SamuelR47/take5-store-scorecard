@@ -1,0 +1,44 @@
+name: Hourly AutoPoll pull
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub cron is in UTC. Central open hours (7a-8p) fall in ~12:00-02:00 UTC
+    # across the year (CST/CDT). We schedule generously and let scraper.py
+    # decide, in Central time, whether stores are actually open (DST-proof).
+    - cron: "0 12-23 * * *"
+    - cron: "0 0-2 * * *"
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: autopoll-pull
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          AUTOPOLL_USER: ${{ secrets.AUTOPOLL_USER }}
+          AUTOPOLL_PASS: ${{ secrets.AUTOPOLL_PASS }}
+          STORES: ${{ vars.STORES }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          OUTPUT_DIR: "Hourly Data Pull"
+        run: python scraper.py
+
+      - name: Upload raw + parsed captures (audit trail)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hourly-data-${{ github.run_id }}
+          path: "Hourly Data Pull/**"
+          if-no-files-found: ignore
+          retention-days: 14
