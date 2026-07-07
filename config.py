@@ -46,7 +46,7 @@ METRICS = {
     "cars":         {"label": "Cars",             "money": False, "dp": 0, "rate": False},
     "aro":          {"label": "ARO",              "money": True,  "dp": 2, "rate": True},
     "net_sales":    {"label": "Net revenue",      "money": True,  "dp": 0, "rate": False},
-    "big4_total_units": {"label": "Big 4",        "money": False, "dp": 0, "rate": False},
+    "big4_total_units": {"label": "Big 4/5",      "money": False, "dp": 0, "rate": False},
     "labor_hours":  {"label": "Labor hours",      "money": False, "dp": 1, "rate": False},
     "lhpc":         {"label": "Labor hrs/car",    "money": False, "dp": 2, "rate": True},
 }

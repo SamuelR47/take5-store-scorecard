@@ -191,7 +191,7 @@ def render_store(store, baseline):
             st.caption("Product detail builds as the day's tickets come in.")
     with mc2:
         st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
-                    "Big 4 attachment</div>", unsafe_allow_html=True)
+                    "Big 4/5 attachment</div>", unsafe_allow_html=True)
         fig = charts.big4_figure(big4)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -199,6 +199,7 @@ def render_store(store, baseline):
             st.caption("Big 4 attachment builds through the day.")
 
     # ---- operational detail ----
+    st.markdown(style.divider(), unsafe_allow_html=True)
     st.markdown(style.section_header("Operational detail", "the numbers behind the day", ""),
                 unsafe_allow_html=True)
     lab = calc.labor_block(latest)

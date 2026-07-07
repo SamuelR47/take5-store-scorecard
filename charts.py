@@ -160,14 +160,14 @@ def mix_figure(items):
                     insidetextanchor="middle", textfont=dict(color="#fff", size=12),
                     hovertemplate=f"{n}: ${a:,.0f} (%{{x:.0f}}%)<extra></extra>")
     fig.update_layout(barmode="stack")
-    fig.update_xaxes(range=[0, 100], ticksuffix="%")
+    fig.update_xaxes(range=[0, 100], visible=False)
     fig.update_yaxes(showticklabels=False)
     return _chrome(fig, 200, legend=True)
 
 
 def big4_figure(big4):
     """Big 4 attach-rate bars. Hover shows attach %, units and $."""
-    order = ["Air Filter", "Wiper Blade", "Cabin Filter", "Coolant Exchange"]
+    order = ["Coolant Exchange", "Air Filter", "Cabin Filter", "Wiper Blade", "Differential"]
     names = [n for n in order if n in big4] or list(big4.keys())
     if not names:
         return None
