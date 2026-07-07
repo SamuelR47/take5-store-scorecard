@@ -32,6 +32,25 @@ def find(pattern, text, group=1, flags=0):
     return m.group(group) if m else None
 
 
+def _int_total(text, pattern):
+    """Match a two-column '<Above> <Total>' int line; return Total (2nd) if
+    present, else the single value. Pattern must have g1=Above, g2=Total?."""
+    m = re.search(pattern, text)
+    if not m:
+        return 0
+    val = m.group(2) if m.lastindex and m.lastindex >= 2 and m.group(2) else m.group(1)
+    return int(val)
+
+
+def _money_total(text, pattern):
+    """Money version of _int_total: prefer the 2nd (Total) column when present."""
+    m = re.search(pattern, text)
+    if not m:
+        return None
+    val = m.group(2) if m.lastindex and m.lastindex >= 2 and m.group(2) else m.group(1)
+    return money(val)
+
+
 def num(s):
     """'26.83', '$0.00', '0.00%', '-$9.04' or blank -> float or None."""
     if s is None:
@@ -150,14 +169,33 @@ def parse_report(text):
     d["sub_total"]      = money(find(r"Sub Total\s+(-?\$[\d,]+\.\d{2})", text))
     d["coupons"]        = money(find(r"Coupons\s+(-?\$[\d,]+\.\d{2})", text))
     d["discounts"]      = money(find(r"Discounts\s+(-?\$[\d,]+\.\d{2})", text))
-    d["cars"]           = int(find(r"Cars\s*:\s*(\d+)", text) or 0)
-    d["average"]        = money(find(r"Average\s*:\s*(-?\$[\d,]+\.\d{2})", text))
-    d["average_less_coupon"] = money(find(r"Aver-Coup:\s*(-?\$[\d,]+\.\d{2})", text))
+
+    # --- Cars / Average: use the TOTAL column, not the "Above $X" column ---
+    # The report prints two side-by-side columns under an "Above $X.XX  Total"
+    # header. The threshold ($8.99, $15.00, ...) varies by store, so we match
+    # the DUAL-column shape structurally and take the SECOND value (Total).
+    # Fall back to a single value for older/one-column reports.
+    d["cars"]    = _int_total(text, r"Cars\s*:\s*(\d+)(?:\s+(\d+))?")
+    d["average"] = _money_total(
+        text, r"Average\s*:\s*(-?\$[\d,]+\.\d{2})(?:\s+(-?\$[\d,]+\.\d{2}))?")
+    d["average_less_coupon"] = _money_total(
+        text, r"Aver-Coup:\s*(-?\$[\d,]+\.\d{2})(?:\s+(-?\$[\d,]+\.\d{2}))?")
+
     d["materials_amount"] = money(find(r"Materials:\s*(-?\$[\d,]+\.\d{2})", text))
     d["materials_pct"]  = pct(find(r"Materials:\s*-?\$[\d,]+\.\d{2}\s+(\d+)%", text))
+
+    # Full-service count + dollars, e.g. "Full Serv: $121.41 7"
+    m_fs = re.search(r"Full Serv:\s*(-?\$[\d,]+\.\d{2})\s+(\d+)", text)
+    d["full_serv_amount"] = money(m_fs.group(1)) if m_fs else None
+    d["full_serv_count"]  = int(m_fs.group(2)) if m_fs else None
+    d["full_serv"] = ({"count": d["full_serv_count"], "amount": d["full_serv_amount"]}
+                      if m_fs else None)
+
     d["asa"]            = money(find(r"ASA\*\s*:\s*(-?\$[\d,]+\.\d{2})", text))
     d["asa_less_coupon"]= money(find(r"ASA\*-Coup:\s*(-?\$[\d,]+\.\d{2})", text))
-    d["total"]          = money(find(r"\bTOTAL\s+(-?\$[\d,]+\.\d{2})", text))
+    # Anchor to line start so "Sub Total" / "TOTAL RECEIPTS" / "TOTAL CUSTOMERS"
+    # can never be mistaken for the standalone NET-of-discounts TOTAL line.
+    d["total"]          = money(find(r"^TOTAL\s+(-?\$[\d,]+\.\d{2})", text, flags=re.M))
     d["net_sales"]      = money(find(r"NET SALES\s+(-?\$[\d,]+\.\d{2})", text))
     d["sales_tax"]      = money(find(r"SALES TAX\s+(-?\$[\d,]+\.\d{2})", text))
     d["gross_sales"]    = money(find(r"GROSS SALES\s+(-?\$[\d,]+\.\d{2})", text))
@@ -178,7 +216,6 @@ def parse_report(text):
     d["reprints"] = int(find(r"Reprints:\s*(\d+)", text) or 0)
     d["cancels"]  = int(find(r"Cancels:\s*(\d+)", text) or 0)
 
-    # ---- Labor block (all profit centers) ----
     centers = parse_labor(text)
     d["labor_by_center"] = centers
     d["labor"] = labor_summary(centers)

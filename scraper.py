@@ -26,6 +26,24 @@ BASE = "https://autopoll.drivenbrands.com"
 LOGIN_URL = f"{BASE}/Account/LogOn"
 REPORT_URL = f"{BASE}/MainMenu/DisplaySalesReport/csr{{store}}"
 
+# ---------------------------------------------------------------------------
+# The 15 stores. THIS is the single source of truth for which stores we pull.
+# Override at runtime with the STORES env var (comma-separated) for testing or
+# a smaller pilot; if STORES is unset we pull all 15. Do not hardcode a single
+# store anywhere else in the flow.
+# ---------------------------------------------------------------------------
+ALL_STORES = [
+    "1503", "1504", "1505", "1506", "1507", "1508", "1509", "1511",
+    "1512", "1513", "1515", "1516", "1517", "1521", "1522",
+]
+
+
+def get_stores():
+    env = os.environ.get("STORES", "").strip()
+    if env:
+        return [s.strip() for s in env.split(",") if s.strip()]
+    return list(ALL_STORES)
+
 # Store open hours in Central time, keyed by Python weekday (Mon=0 .. Sun=6).
 # (open_hour, close_hour) 24h. We pull on any hour where open <= hour <= close.
 HOURS = {
@@ -150,7 +168,7 @@ def pull_store(session, store, retries=3):
 def main():
     user = os.environ.get("AUTOPOLL_USER")
     password = os.environ.get("AUTOPOLL_PASS")
-    stores = [s.strip() for s in os.environ.get("STORES", "1512,1515").split(",") if s.strip()]
+    stores = get_stores()
     out_dir = os.environ.get("OUTPUT_DIR", "Hourly Data Pull")
     sb_url = os.environ.get("SUPABASE_URL")
     sb_key = os.environ.get("SUPABASE_KEY")
@@ -167,31 +185,34 @@ def main():
     print(f"{now:%Y-%m-%d %H:%M %Z}: pulling stores {stores}")
     session = login(user, password)
 
-    ok, failed = [], []
+    # One bad store must never kill the run: every store is fetched, parsed,
+    # validated and upserted inside its own try/except. failed[] records the
+    # reason per store for the end-of-run summary.
+    ok, failed = [], {}
     for store in stores:
         try:
-            data, text = pull_store(session, store)
-        except PermissionError:
-            print("  session expired, re-logging in...")
-            session = login(user, password)
-            data, text = pull_store(session, store)
+            try:
+                data, text = pull_store(session, store)
+            except PermissionError:
+                print("  session expired, re-logging in...")
+                session = login(user, password)
+                data, text = pull_store(session, store)
+            save_local(out_dir, store, data, text, now)
+            if sb_url and sb_key:
+                upsert_supabase(sb_url, sb_key, data, now)
         except Exception as e:
             print(f"  [store {store}] GAVE UP: {e}")
-            failed.append(store)
+            failed[store] = str(e)
             continue
-        save_local(out_dir, store, data, text, now)
-        if sb_url and sb_key:
-            try:
-                upsert_supabase(sb_url, sb_key, data, now)
-            except Exception as e:
-                print(f"  [store {store}] supabase upsert failed: {e}")
-                failed.append(store)
-                continue
         ok.append(store)
         print(f"  [store {store}] OK - {data.get('store_name')} "
               f"cars={data.get('cars')} net=${data.get('net_sales')}")
 
-    print(f"Done. success={ok} failed={failed}")
+    print("\n===== RUN SUMMARY =====")
+    print(f"  stores attempted : {len(stores)}")
+    print(f"  succeeded ({len(ok)}) : {', '.join(ok) or '-'}")
+    print(f"  failed ({len(failed)})   : "
+          + ("; ".join(f"{s} ({why})" for s, why in failed.items()) or "-"))
     # Non-zero exit if every store failed -> surfaces as a failed Actions run.
     return 0 if ok else 2
 
