@@ -64,17 +64,26 @@ RED = "#E4002B"     # Take 5 red - alerts / behind
 AMBER = "#E6A200"   # caution
 INK = "#1F2A37"     # body text
 MUTE = "#5B6B7F"    # secondary text
+STEEL = "#9FB4CC"   # Normal/Goal bars
 LINE = "#E3E8EF"    # borders
 LIGHT = "#F4F7FB"   # tints
+CODE = "#8DA2BD"    # gray store-code text in the title
 AREA = "rgba(46,111,183,0.12)"   # soft normal-curve fill
 
-# Metrics offered in selectors (heat map / comparison)
+# Heat-map color scale (higher-contrast, more distinct than a near-mono navy ramp)
+HEAT_SCALE = [[0.0, "#F7FBFF"], [0.25, "#CFE1F2"], [0.5, "#94C4DF"],
+              [0.75, "#4A98C9"], [1.0, "#1F6FB2"]]
+
+# Metrics offered in selectors (heat map / comparison). "aro" and "lhpc" are
+# RATES (revenue-per-car, labor-hours-per-car), not running totals.
 METRICS = {
     "Cars": {"key": "cars", "money": False},
     "Net sales": {"key": "net_sales", "money": True},
     "Big 4 units": {"key": "big4_total_units", "money": False},
     "ARO": {"key": "aro", "money": True},
+    "Labor hrs/car": {"key": "lhpc", "money": False},
 }
+RATE_KEYS = ("aro", "lhpc")   # ratios: shown as-is per hour, never differenced
 
 st.set_page_config(page_title=f"{BRAND} - Store Scorecard", layout="wide",
                    initial_sidebar_state="expanded")
@@ -91,7 +100,8 @@ st.markdown(
       /* keep everything inside the header visible - never clip */
       .vea-head, .vea-head * {overflow: visible !important;}
       @media print {
-        section[data-testid="stSidebar"], .stButton, [data-testid="stToolbar"] {display: none !important;}
+        section[data-testid="stSidebar"], .stButton, [data-testid="stToolbar"],
+        .vea-noprint {display: none !important;}
         .block-container {max-width: 100% !important; padding-top: 0 !important;}
       }
     </style>
@@ -150,6 +160,24 @@ def arrow(actual, expected):
     if actual >= expected:
         return "▲"          # up triangle
     return "▼"              # down triangle
+
+
+def pace_state(actual, expected):
+    """SINGLE source of truth for ahead/on-pace/behind, used by cards, the
+    staffing callout, ranking, and the exec count. Same 100%/90% bands as
+    status_color so nothing contradicts.
+      ahead  : actual >= 100% of goal-by-now  (green)
+      on pace: 90-100%                         (amber)
+      behind : < 90%                           (red)
+    Returns (label, color, is_ahead)."""
+    if expected is None or expected == 0 or actual is None:
+        return ("no goal", INK, None)
+    ratio = actual / expected
+    if ratio >= 1.0:
+        return ("ahead of pace", GREEN, True)
+    if ratio >= 0.90:
+        return ("on pace", AMBER, False)
+    return ("behind pace", RED, False)
 
 
 # ---- holidays: the historical "normal" must EXCLUDE these (and observed dates) ----
@@ -215,16 +243,26 @@ def row_hour(row):
         return None
 
 
+def _labor_block(row):
+    data = row.get("data") or {}
+    return data.get("labor") or row.get("labor") or {}
+
+
 def _get_metric(row, key):
-    """Read a metric off a snapshot row. ARO is derived; labor comes from data{}."""
+    """Read a metric off a snapshot row. ARO / labor-per-car are derived rates;
+    labor hours come from the `data` jsonb block."""
     if key == "aro":
         cars = row.get("cars") or 0
         net = row.get("net_sales")
         return (net / cars) if (cars and net is not None) else None
+    if key == "lhpc":                       # labor hours per car
+        cars = row.get("cars") or 0
+        hrs = _labor_block(row).get("hours")
+        if hrs is not None and cars:
+            return hrs / cars
+        return _labor_block(row).get("hours_per_car")
     if key == "labor_hours":
-        data = row.get("data") or {}
-        lab = data.get("labor") or row.get("labor") or {}
-        return lab.get("hours")
+        return _labor_block(row).get("hours")
     return row.get(key)
 
 
@@ -258,8 +296,8 @@ def to_per_period(cum):
 
 
 def to_per_period_metric(cum, key):
-    """Per-period for a cumulative metric; ARO is a rate so it is not differenced."""
-    if key == "aro":
+    """Per-period for a cumulative metric; rates (ARO, labor/car) are not differenced."""
+    if key in RATE_KEYS:
         return dict(cum)
     return to_per_period(cum)
 
@@ -426,16 +464,19 @@ def load_baseline():
 # UI atoms
 # ==========================================================================
 def wordmark(sub):
+    """Centered header: brand row on top, context line (store name/date) below,
+    both centered and vertically balanced in the navy box."""
     st.markdown(
         f'<div class="vea-head" style="background:{NAVY};border-radius:12px;'
-        f'padding:16px 24px;margin:0 0 12px 0;display:flex;justify-content:space-between;'
-        f'align-items:center;box-sizing:border-box;min-height:64px;flex-wrap:wrap;gap:8px;">'
-        f'<div style="display:flex;align-items:center;gap:14px;">'
-        f'<div style="width:9px;height:34px;background:{RED};border-radius:2px;flex:none;"></div>'
-        f'<div style="color:#fff;font-size:1.45rem;font-weight:800;letter-spacing:.03em;line-height:1.15;">'
-        f'{BRAND}<span style="color:#9FB4CC;font-weight:500;font-size:.85rem;">'
+        f'padding:18px 24px;margin:0 0 12px 0;display:flex;flex-direction:column;'
+        f'align-items:center;justify-content:center;text-align:center;'
+        f'box-sizing:border-box;min-height:74px;gap:5px;">'
+        f'<div style="display:flex;align-items:center;justify-content:center;gap:12px;">'
+        f'<div style="width:9px;height:30px;background:{RED};border-radius:2px;flex:none;"></div>'
+        f'<div style="color:#fff;font-size:1.5rem;font-weight:800;letter-spacing:.03em;line-height:1.1;">'
+        f'{BRAND}<span style="color:{STEEL};font-weight:500;font-size:.85rem;">'
         f' &nbsp;&middot;&nbsp; {SUBBRAND}</span></div></div>'
-        f'<div style="color:#DCE5F0;text-align:right;font-size:.9rem;line-height:1.3;">{sub}</div>'
+        f'<div style="color:#DCE5F0;font-size:.92rem;line-height:1.3;">{sub}</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -526,53 +567,65 @@ def _layout(fig, height, title=None, legend="bottom", hovermode="closest"):
 
 
 def chart_per_hour(hours, normal, actual, projected, money, label):
-    """Chart 1: soft normal-curve AREA behind + today ACTUAL (blue) + PROJECTED (green)."""
+    """Chart 1 (per Excel): CLUSTERED COLUMNS by time of day - Normal/Goal, Actual,
+    Projected. Actual and Projected share one slot (same offsetgroup) so there is
+    no empty gap between Normal/Goal and Projected when Actual is absent."""
     x = [hour_label(h) for h in hours]
     pref = "$" if money else ""
     fig = go.Figure()
-    if normal:
-        fig.add_trace(go.Scatter(
-            x=x, y=[normal.get(h) for h in hours], name="Normal (this weekday)",
-            mode="lines", line=dict(color=BLUE, width=1.4, shape="spline"),
-            fill="tozeroy", fillcolor=AREA,
-            hovertemplate="Normal: " + pref + "%{y:,.0f}<extra></extra>"))
     fig.add_trace(go.Bar(
-        x=x, y=[actual.get(h) for h in hours], name="Today (actual)",
-        marker_color=BLUE, marker_line_width=0,
+        x=x, y=[normal.get(h) for h in hours], name="Normal/Goal",
+        marker_color=STEEL, marker_line_width=0, offsetgroup="norm",
+        hovertemplate="Normal/Goal: " + pref + "%{y:,.0f}<extra></extra>"))
+    fig.add_trace(go.Bar(
+        x=x, y=[actual.get(h) for h in hours], name="Actual",
+        marker_color=BLUE, marker_line_width=0, offsetgroup="today",
         hovertemplate="Actual: " + pref + "%{y:,.0f}<extra></extra>"))
     if projected:
         fig.add_trace(go.Bar(
             x=x, y=[projected.get(h) for h in hours], name="Projected",
-            marker_color=GREEN, marker_line_width=0, opacity=0.9,
+            marker_color=GREEN, marker_line_width=0, offsetgroup="today",
             hovertemplate="Projected: " + pref + "%{y:,.0f}<extra></extra>"))
-    fig.update_layout(barmode="overlay")
+    fig.update_layout(barmode="group", bargap=0.28, bargroupgap=0.0)
     fig.update_yaxes(title=("$ per hour" if money else "per hour"), rangemode="tozero")
-    return _layout(fig, 360, f"Per-hour: today vs normal - {label}",
+    return _layout(fig, 360, f"Per hour: today vs Normal/Goal - {label}",
                    legend="bottom", hovermode="x unified")
 
 
-def chart_projection(normal_day, actual_so_far, projected_day, err, money, label):
-    """Chart 2 (the favorite): normal-day vs today-so-far vs re-forecast, with a band."""
+def chart_gauge(value, expected_now, goal_day, money, label, dp=0):
+    """Chart 2 (per Excel): enhanced semicircle speedometer gauge.
+
+    Arc spans the whole day (0 -> day's Normal/Goal). The filled arc = value so
+    far; the marker (threshold) = where a normal day would be BY NOW. Fill past
+    the marker = ahead of pace (green); short of it = behind (red). Center shows
+    the current value.
+    """
     pref = "$" if money else ""
-    cats = ["So far today", "Normal full day", "Projected full day"]
-    vals = [actual_so_far, normal_day, projected_day]
-    colors = [BLUE, MUTE, status_color(projected_day, normal_day)]
-    fig = go.Figure()
-    for cat, val, col in zip(cats, vals, colors):
-        err_x = dict(type="data", array=[val * err], visible=True,
-                     color="rgba(20,39,63,0.45)", thickness=1.4, width=6) \
-            if (cat.startswith("Projected") and val is not None) else None
-        fig.add_trace(go.Bar(
-            y=[cat], x=[val], orientation="h", marker_color=col, width=0.6,
-            error_x=err_x, showlegend=False,
-            text=[pref + format(val, ",.0f") if val is not None else "—"],
-            textposition="outside", cliponaxis=False,
-            hovertemplate="%{y}: " + pref + "%{x:,.0f}<extra></extra>"))
-    if normal_day:
-        fig.add_vline(x=normal_day, line_color=NAVY, line_dash="dot", line_width=1.5)
-    fig.update_xaxes(title=("$" if money else "count"), rangemode="tozero")
-    return _layout(fig, 260, f"Will we beat a normal {label.lower()} day? (band = uncertainty)",
-                   legend="none")
+    ends = [v for v in (goal_day, value, expected_now) if v]
+    axis_max = (max(ends) * 1.05) if ends else 1
+    _, bar_color, _ = pace_state(value, expected_now)
+    if bar_color == INK:                       # no goal yet -> neutral fill
+        bar_color = BLUE
+    gauge = {
+        "shape": "angular",
+        "axis": {"range": [0, axis_max], "tickcolor": MUTE, "tickwidth": 1},
+        "bar": {"color": bar_color, "thickness": 0.30},
+        "bgcolor": "#EEF2F7", "borderwidth": 0,
+        "steps": [{"range": [0, axis_max], "color": "#EEF2F7"}],
+    }
+    if expected_now:
+        gauge["threshold"] = {"line": {"color": INK, "width": 4},
+                              "thickness": 0.92, "value": expected_now}
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=value or 0,
+        number={"font": {"size": 44, "color": INK},
+                "prefix": pref, "valueformat": f",.{dp}f"},
+        gauge=gauge, domain={"x": [0, 1], "y": [0, 1]}))
+    sub = (f"marker = normal-day pace by now ({pref}{expected_now:,.{dp}f})"
+           if expected_now else "goal builds as history accumulates")
+    fig.add_annotation(text=sub, showarrow=False, x=0.5, y=-0.02,
+                       font=dict(size=11, color=MUTE))
+    return _layout(fig, 300, f"{label} vs a normal day", legend="none")
 
 
 def chart_mix_bar(items):
@@ -605,20 +658,23 @@ def chart_mix_bar(items):
     return _layout(fig, 250, "Product mix - share of dollars (100%)", legend="bottom")
 
 
-def chart_treemap(items):
-    """Treemap of the same product data - boxes sized by dollar share, labeled."""
+def chart_products_bar(items):
+    """Standard horizontal bar chart of revenue by product line (replaces the
+    treemap). Sorted largest at top; labeled with dollars."""
     rows = [(i.get("description", "?"), i.get("amount") or 0) for i in items
             if (i.get("amount") or 0) > 0]
     if not rows:
         return None
-    labels = [n for n, _ in rows]
-    values = [a for _, a in rows]
-    fig = go.Figure(go.Treemap(
-        labels=labels, parents=[""] * len(labels), values=values,
-        textinfo="label+value+percent root", textfont=dict(size=12),
-        marker=dict(colors=values, colorscale=[[0, "#9DB6D4"], [1, NAVY]], line=dict(width=1, color="#fff")),
-        hovertemplate="%{label}<br>$%{value:,.0f} (%{percentRoot})<extra></extra>"))
-    return _layout(fig, 300, "Product mix - treemap (size = $)", legend="none")
+    rows.sort(key=lambda t: t[1])            # ascending -> largest ends up on top
+    names = [n for n, _ in rows]
+    vals = [a for _, a in rows]
+    fig = go.Figure(go.Bar(
+        x=vals, y=names, orientation="h", marker_color=NAVY,
+        text=[f"${a:,.0f}" for a in vals], textposition="outside", cliponaxis=False,
+        hovertemplate="%{y}: $%{x:,.0f}<extra></extra>"))
+    fig.update_xaxes(title="$ today", rangemode="tozero")
+    return _layout(fig, max(300, 26 * len(rows)),
+                   "Revenue by product line (today)", legend="none")
 
 
 def chart_big4(big4):
@@ -637,7 +693,7 @@ def chart_big4(big4):
 # ==========================================================================
 def _kpi_section(store, hist, today_rows, hours, weekday, key, money, label,
                  daily_normal):
-    """Render one KPI section = Chart 1 (per-hour) + Chart 2 (projection)."""
+    """Render one KPI section = Chart 1 (clustered columns) + Chart 2 (gauge)."""
     base_h = hour_baselines(hist, weekday, key)
     today_cum = cum_by_hour(today_rows, key)
     today_pp = to_per_period_metric(today_cum, key)
@@ -648,27 +704,23 @@ def _kpi_section(store, hist, today_rows, hours, weekday, key, money, label,
         st.plotly_chart(chart_per_hour(hours, base_h, actual, projected, money, label),
                         use_container_width=True)
         if not base_h:
-            st.caption("Normal curve builds as more same-weekday hourly data accumulates "
+            st.caption("Normal/Goal curve builds as more same-weekday hourly data accumulates "
                        "(needs a few weeks of pulls). Bars show today's actual per hour.")
 
-    # ---- projection maths for Chart 2 ----
-    actual_so_far = sum(today_pp.values()) if key != "aro" else (
-        (today_cum.get(max(today_cum)) if today_cum else None))
-    if key == "aro":
-        normal_day = daily_normal
-        projected_day = daily_normal      # replaced below by caller for ARO
+    # ---- gauge maths for Chart 2 (day goal + goal-by-now marker) ----
+    actual_so_far = sum(today_pp.values())
+    goal_day = (sum(base_h.values()) if base_h else None) or daily_normal
+    if base_h and completed:
+        expected_now = sum(base_h.get(h, 0) for h in completed)
+    elif daily_normal and hours:
+        expected_now = daily_normal * (len(completed) / len(hours))
     else:
-        normal_day = (sum(base_h.values()) if base_h else None) or daily_normal
-        projected_day = (actual_so_far or 0) + sum(projected.values()) if (actual or projected) else None
+        expected_now = None
     with c2:
-        if projected_day is not None or normal_day is not None:
-            st.plotly_chart(
-                chart_projection(normal_day, actual_so_far, projected_day, ERR_DAY, money, label),
-                use_container_width=True)
-        else:
-            st.info("Projection builds once the day is underway.")
-    return {"pace": pace, "actual_day": actual_so_far, "normal_day": normal_day,
-            "projected_day": projected_day, "base_h": base_h}
+        st.plotly_chart(chart_gauge(actual_so_far, expected_now, goal_day, money, label),
+                        use_container_width=True)
+    return {"pace": pace, "goal_day": goal_day, "expected_now": expected_now,
+            "actual_day": actual_so_far}
 
 
 def render_store(store, baseline):
@@ -687,16 +739,22 @@ def render_store(store, baseline):
     sales_norm_day = sales_base["mean"] if sales_base else None
     aro_norm = (sales_norm_day / cars_norm_day) if (cars_norm_day and sales_norm_day) else None
 
+    code_html = f'<span style="color:{CODE};">({store})</span>'
     if not rows:
-        wordmark(f"{store_display(store)} &middot; {now:%A, %b %-d}")
+        wordmark(f"{store_display(store)} {code_html} &middot; {now:%A, %b %-d}")
         st.info("No data pulled yet today. This fills in on the first pull after the store opens.")
         return
 
     latest = rows[-1]
     frac = frac_elapsed(now)
-    wordmark(f"{store_display(store, latest)} &middot; {now:%A, %b %-d} &middot; "
+    wordmark(f"{store_display(store, latest)} {code_html} &middot; {now:%A, %b %-d} &middot; "
              f"{frac*100:.0f}% through the day")
     freshness(latest, now)
+    st.markdown(
+        f'<div class="vea-noprint" style="text-align:right;margin:-6px 0 8px;">'
+        f'<button onclick="window.print()" style="padding:7px 16px;border:1px solid {LINE};'
+        f'border-radius:8px;background:#fff;color:{NAVY};font-weight:700;cursor:pointer;">'
+        f'&#128424;&#65039; Print this scorecard</button></div>', unsafe_allow_html=True)
 
     cars = latest.get("cars") or 0
     net = latest.get("net_sales") or 0
@@ -726,19 +784,19 @@ def render_store(store, baseline):
     else:
         cars_eod = cars_norm_day
 
-    # ---- staffing bottom line (loudest element) ----
-    if cars_expect_now is not None:
-        diff = cars - cars_expect_now
-        if diff >= 1.5:
-            verdict, vcolor = "Ahead of a normal pace - keep full staffing on.", GREEN
-        elif diff <= -1.5:
-            verdict, vcolor = "Behind a normal pace - you may be over-staffed right now.", RED
-        else:
-            verdict, vcolor = "Right on the normal pace.", NAVY
+    # ---- staffing bottom line (loudest element) — SAME pace bands as the cards ----
+    state, vcolor, _ = pace_state(cars, cars_expect_now)
+    if cars_expect_now is None:
+        verdict = "Tracking today's pace."
+        vcolor = NAVY
+    elif state == "ahead of pace":
+        verdict = "Ahead of the goal pace — keep full staffing on."
+    elif state == "on pace":
+        verdict = "On the goal pace."
     else:
-        verdict, vcolor = "Tracking today's pace.", NAVY
+        verdict = "Behind the goal pace — you may be over-staffed right now."
     eod_txt = (f" Projected to finish about <b>{cars_eod:,.0f} cars</b> "
-               f"(normal {day} ≈ {cars_norm_day:,.0f})." if cars_eod and cars_norm_day
+               f"(goal for {day} ≈ {cars_norm_day:,.0f})." if cars_eod and cars_norm_day
                else (f" Projected to finish about <b>{cars_eod:,.0f} cars</b>." if cars_eod else ""))
     st.markdown(
         f'<div style="border-left:6px solid {vcolor};background:{LIGHT};padding:14px 20px;'
@@ -750,25 +808,25 @@ def render_store(store, baseline):
     # ---- five pinned KPI cards ----
     cards = [
         kpi_card("Cars", f"{cars:,.0f}",
-                 f"exp ~{cars_expect_now:,.0f}" if cars_expect_now else "no goal",
+                 f"goal by now ~{cars_expect_now:,.0f}" if cars_expect_now else "no goal",
                  (f"{arrow(cars, cars_expect_now)} {cars-cars_expect_now:+,.0f}"
                   if cars_expect_now else ""),
                  (cars / cars_expect_now * 100) if cars_expect_now else None,
                  status_color(cars, cars_expect_now),
-                 "Cars booked so far vs the normal number booked by this time of day."),
+                 "Cars booked so far vs the Normal/Goal by this time of day."),
         kpi_card("Net revenue", f"${net:,.0f}",
-                 f"exp ~${sales_expect_now:,.0f}" if sales_expect_now else "no goal",
+                 f"goal by now ~${sales_expect_now:,.0f}" if sales_expect_now else "no goal",
                  (f"{arrow(net, sales_expect_now)} {net-sales_expect_now:+,.0f}"
                   if sales_expect_now else ""),
                  (net / sales_expect_now * 100) if sales_expect_now else None,
                  status_color(net, sales_expect_now),
-                 "Net sales so far vs the normal amount by this time of day."),
+                 "Net sales so far vs the Normal/Goal by this time of day."),
         kpi_card("ARO", f"${aro:,.2f}",
-                 f"normal ${aro_norm:,.2f}" if aro_norm else "no goal",
+                 f"goal ${aro_norm:,.2f}" if aro_norm else "no goal",
                  (f"{arrow(aro, aro_norm)} {aro-aro_norm:+,.2f}" if aro_norm else ""),
                  (aro / aro_norm * 100) if aro_norm else None,
                  status_color(aro, aro_norm),
-                 "Average revenue per car vs this store's normal ARO for this weekday."),
+                 "Average revenue per car vs this store's Normal/Goal ARO for this weekday."),
         kpi_card("Big 4 units", f"{latest.get('big4_total_units') or 0:,.0f}",
                  f"${latest.get('big4_total_amount') or 0:,.0f} attach $", "", None, NAVY,
                  "Big 4 attachment units today (Air Filter, Wiper, Cabin, Coolant). No goal set yet."),
@@ -779,46 +837,44 @@ def render_store(store, baseline):
     st.markdown(f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px;">'
                 f'{"".join(cards)}</div>', unsafe_allow_html=True)
 
-    # ---- one section per KPI, each with two charts ----
-    section_title("Cars", "per hour vs normal, and the day's re-forecast")
-    r = _kpi_section(store, hist, rows, hours, weekday, "cars", False, "Cars", cars_norm_day)
+    # ---- one section per KPI, each with two charts (columns + gauge) ----
+    section_title("Cars", "columns by hour vs Normal/Goal, plus the day-goal gauge")
+    _kpi_section(store, hist, rows, hours, weekday, "cars", False, "Cars", cars_norm_day)
 
-    section_title("Net revenue", "per hour vs normal, and the day's re-forecast")
-    rn = _kpi_section(store, hist, rows, hours, weekday, "net_sales", True, "Net", sales_norm_day)
+    section_title("Net revenue", "columns by hour vs Normal/Goal, plus the day-goal gauge")
+    _kpi_section(store, hist, rows, hours, weekday, "net_sales", True, "Net", sales_norm_day)
 
     section_title("ARO", "revenue per car through the day")
-    # ARO forecast = forecast Net / forecast Cars (spec section 9)
-    aro_proj = (rn["projected_day"] / r["projected_day"]) if (rn.get("projected_day") and r.get("projected_day")) else None
     ca, cb = st.columns([1.35, 1])
     aro_base_h = hour_baselines(hist, weekday, "aro")
-    aro_cum = cum_by_hour(rows, "aro")
-    aro_pp = to_per_period_metric(aro_cum, "aro")
+    aro_pp = to_per_period_metric(cum_by_hour(rows, "aro"), "aro")
     aro_actual, aro_projected, _, _ = forecast_hours(hours, aro_pp, aro_base_h)
     with ca:
         st.plotly_chart(chart_per_hour(hours, aro_base_h, aro_actual, aro_projected, True, "ARO"),
                         use_container_width=True)
         if not aro_base_h:
-            st.caption("ARO-by-hour normal builds as data accumulates.")
+            st.caption("ARO-by-hour Normal/Goal builds as data accumulates.")
     with cb:
-        st.plotly_chart(chart_projection(aro_norm, aro if aro else None, aro_proj, ERR_DAY, True, "ARO"),
+        # ARO is a rate: goal = this store's normal ARO for the weekday
+        st.plotly_chart(chart_gauge(aro if aro else None, aro_norm, aro_norm, True, "ARO", dp=2),
                         use_container_width=True)
 
-    section_title("Big 4 attachment", "per hour vs normal, and the day's re-forecast")
+    section_title("Big 4 attachment", "columns by hour vs Normal/Goal, plus the day-goal gauge")
     _kpi_section(store, hist, rows, hours, weekday, "big4_total_units", False, "Big 4", None)
 
-    section_title("Labor hours", "per hour vs normal, and the day's re-forecast")
+    section_title("Labor hours", "columns by hour vs Normal/Goal, plus the day-goal gauge")
     _kpi_section(store, hist, rows, hours, weekday, "labor_hours", False, "Labor hrs", None)
 
-    # ---- product mix: 100% stacked + treemap ----
+    # ---- product mix: 100% stacked + standard product bar (treemap replaced) ----
     section_title("Product mix", "share of today's dollars")
     items = latest.get("line_items") or []
     big4 = latest.get("big4") or {}
     if items:
         m1, m2 = st.columns(2)
         m1.plotly_chart(chart_mix_bar(items), use_container_width=True)
-        tm = chart_treemap(items)
-        if tm:
-            m2.plotly_chart(tm, use_container_width=True)
+        pb = chart_products_bar(items)
+        if pb:
+            m2.plotly_chart(pb, use_container_width=True)
     if big4:
         st.plotly_chart(chart_big4(big4), use_container_width=True)
     if not items and not big4:
@@ -856,7 +912,8 @@ def admin_snapshot(baseline):
         hist_rows[s] = fetch_history(s)
         if not rows:
             stats.append({"store": s, "name": store_display(s), "cars": None,
-                          "net": None, "aro": None, "pct": None})
+                          "net": None, "aro": None, "lhpc": None, "labor_hours": None,
+                          "pct": None})
             continue
         latest = rows[-1]
         cars = latest.get("cars") or 0
@@ -870,6 +927,8 @@ def admin_snapshot(baseline):
             exp = cb["mean"] * frac if cb else None
         stats.append({"store": s, "name": store_display(s, latest), "cars": cars, "net": net,
                       "aro": (net / cars) if cars else 0,
+                      "lhpc": _get_metric(latest, "lhpc"),
+                      "labor_hours": _labor_block(latest).get("hours"),
                       "pct": (cars / exp * 100) if exp else None})
     return stats, today_rows, hist_rows
 
@@ -885,13 +944,16 @@ def render_admin(baseline):
     tot_cars = sum(s["cars"] for s in live)
     tot_net = sum(s["net"] for s in live)
     avg_aro = (tot_net / tot_cars) if tot_cars else 0
-    ahead = sum(1 for s in live if (s["pct"] or 0) >= 100)
+    tot_lhrs = sum((s.get("labor_hours") or 0) for s in live)
+    avg_lhpc = (tot_lhrs / tot_cars) if tot_cars else 0
+    ahead = sum(1 for s in live if (s["pct"] or 0) >= 100)   # >=100% of goal-by-now
     behind = len(live) - ahead
     strip = [
         ("Stores reporting", f"{len(live)}/{len(stats)}"),
         ("Total cars", f"{tot_cars:,.0f}"),
         ("Total net", f"${tot_net:,.0f}"),
         ("Avg ARO", f"${avg_aro:,.2f}"),
+        ("Avg Labor hrs/car", f"{avg_lhpc:,.2f}"),
         ("Ahead / behind pace", f"{ahead} / {behind}" if live else "—"),
     ]
     cells = "".join(
@@ -903,7 +965,7 @@ def render_admin(baseline):
                 f'{cells}</div>', unsafe_allow_html=True)
 
     # ---- ranking ----
-    section_title("Store ranking", "cars vs each store's normal pace — leaders to laggards")
+    section_title("Store ranking", "cars vs each store's goal pace — leaders to laggards")
     ranked = rank_stores(stats)
     trows = ""
     for i, s in enumerate(ranked, 1):
@@ -917,6 +979,7 @@ def render_admin(baseline):
             f'<td style="padding:8px 12px;text-align:right;">{fmt(s["cars"])}</td>'
             f'<td style="padding:8px 12px;text-align:right;">{fmt(s["net"], money=True)}</td>'
             f'<td style="padding:8px 12px;text-align:right;">{fmt(s["aro"], money=True, dp=2)}</td>'
+            f'<td style="padding:8px 12px;text-align:right;">{fmt(s.get("lhpc"), dp=2)}</td>'
             f'<td style="padding:8px 12px;text-align:right;font-weight:800;color:{col};">{pcttxt}</td></tr>')
     st.markdown(
         f'<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid {LINE};'
@@ -927,6 +990,7 @@ def render_admin(baseline):
         f'<th style="padding:9px 12px;text-align:right;">Cars</th>'
         f'<th style="padding:9px 12px;text-align:right;">Net</th>'
         f'<th style="padding:9px 12px;text-align:right;">ARO</th>'
+        f'<th style="padding:9px 12px;text-align:right;">Labor/car</th>'
         f'<th style="padding:9px 12px;text-align:right;">% pace</th></tr>{trows}</table>',
         unsafe_allow_html=True)
 
@@ -934,7 +998,7 @@ def render_admin(baseline):
     section_title("Heat map", "per-hour pattern, shaded vs each store's own peak")
     cA, cB = st.columns([1, 1])
     hm_metric = cA.radio("Metric", list(METRICS.keys()), horizontal=True, key="hm_metric")
-    hm_source = cB.radio("Show", ["Today (actual)", "Normal pattern"], horizontal=True, key="hm_src")
+    hm_source = cB.radio("Show", ["Today (actual)", "Normal/Goal pattern"], horizontal=True, key="hm_src")
     heatmap(today_rows, hist_rows, METRICS[hm_metric]["key"], hm_metric, hm_source)
 
     # ---- multi-store comparison (per-period) ----
@@ -974,7 +1038,7 @@ def heatmap(today_rows, hist_rows, key, label, source):
             per_store[s] = hour_baselines(hist_rows.get(s, []), weekday, key)
 
     if not any(per_store.values()):
-        st.info("Normal pattern builds as several weeks of by-hour data accumulate. "
+        st.info("Normal/Goal pattern builds as several weeks of by-hour data accumulate. "
                 "Switch to “Today (actual)” for live values.")
         return
 
@@ -986,7 +1050,7 @@ def heatmap(today_rows, hist_rows, key, label, source):
             v = per_store[s].get(h)
             zrow.append(v)
             trow.append("—" if v is None else
-                        (f"${v:,.0f}" if money else (f"{v:.2f}" if key == "aro" else f"{v:,.0f}")))
+                        (f"${v:,.0f}" if money else (f"{v:.2f}" if key in RATE_KEYS else f"{v:,.0f}")))
         z.append(zrow)
         text.append(trow)
     # normalize each store (column) to its own peak so the PATTERN shows, not size
@@ -999,8 +1063,8 @@ def heatmap(today_rows, hist_rows, key, label, source):
             znorm[ri][ci] = (v / mx) if (v is not None and mx) else (0 if v == 0 else None)
     fig = go.Figure(go.Heatmap(
         z=znorm, x=[CITY.get(s, s) for s in stores], y=[hour_label(h) for h in hrs],
-        text=text, texttemplate="%{text}", textfont={"size": 11},
-        colorscale=[[0, LIGHT], [0.5, "#7FA8D4"], [1, NAVY]], showscale=True,
+        text=text, texttemplate="%{text}", textfont={"size": 11, "color": INK},
+        colorscale=HEAT_SCALE, showscale=True, xgap=3, ygap=3,
         zmin=0, zmax=1, colorbar=dict(title="vs peak", tickformat=".0%"),
         hovertemplate="%{x} · %{y}<br>" + label + ": %{text}<extra></extra>"))
     fig.update_yaxes(autorange="reversed")
@@ -1042,19 +1106,15 @@ def comparison(picks, today_rows, key, money, label):
 def export_controls(stats):
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["Store", "Cars", "Net", "ARO", "% pace"])
+    w.writerow(["Store", "Cars", "Net", "ARO", "Labor/car", "% pace"])
     for s in stats:
-        w.writerow([s["name"], s["cars"], s["net"], s["aro"],
+        w.writerow([s["name"], s["cars"], s["net"], s["aro"], s.get("lhpc"),
                     f"{s['pct']:.0f}" if s["pct"] is not None else ""])
     today = dt.datetime.now(CENTRAL).strftime("%Y-%m-%d")
-    c1, c2 = st.columns(2)
-    c1.download_button("Download today (CSV)", buf.getvalue(),
+    st.download_button("Download today (CSV)", buf.getvalue(),
                        file_name=f"take5_scorecard_{today}.csv", mime="text/csv",
                        use_container_width=True)
-    c2.markdown(
-        '<button onclick="window.print()" style="width:100%;padding:10px;border:0;border-radius:8px;'
-        f'background:{NAVY};color:#fff;font-weight:700;cursor:pointer;">'
-        f'Print / save one-page scorecard</button>', unsafe_allow_html=True)
+    st.caption("Printing now lives on each store view — open a store to print its one-page scorecard.")
 
 
 # ==========================================================================
@@ -1066,7 +1126,8 @@ def login_view():
     _, mid, _ = st.columns([1, 1.3, 1])
     with mid:
         st.markdown(f"<div style='font-weight:700;color:{NAVY};font-size:1.05rem;"
-                    f"margin-bottom:4px;'>Enter your access code</div>", unsafe_allow_html=True)
+                    f"margin-bottom:4px;text-align:center;'>Enter your access code</div>",
+                    unsafe_allow_html=True)
         with st.form("login", clear_on_submit=False):
             pw = st.text_input("Access code", type="password", label_visibility="collapsed",
                                placeholder="Access code")
