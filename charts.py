@@ -13,34 +13,36 @@ def hour_label(h):
 
 
 def bar_figure(m, money, label):
-    """Clustered columns: Target (grey), Actual (blue), Projected (green).
-    Hover shows the value plus variance vs the true norm."""
+    """Non-rate: clustered Target/Actual/Projected columns.
+    Rate (ARO, labor/car): Actual columns vs a Normal reference LINE - a rate has
+    no accumulating per-hour target, so no flat grey target bars."""
     hours = m["hours"]
     x = [hour_label(h) for h in hours]
     pref = "$" if money else ""
-    target = [m["target"].get(h) for h in hours]
-    actual = [m["actual"].get(h) for h in hours]
-    proj = [m["projected"].get(h) for h in hours]
-    norm = m["norm"]
-
-    def hov(name):
-        return name + ": " + pref + "%{y:,.1f}<extra></extra>"
-
     fig = go.Figure()
-    fig.add_bar(x=x, y=target, name="Target", marker_color=GREYF,
-                marker_line=dict(color=STEEL, width=1), offsetgroup="t",
-                hovertemplate=hov("Target"))
-    fig.add_bar(x=x, y=actual, name="Actual", marker_color=BLUE, offsetgroup="a",
-                hovertemplate=hov("Actual"))
-    fig.add_bar(x=x, y=proj, name="Projected", marker_color=GREEN, offsetgroup="a",
-                hovertemplate=hov("Projected"))
-    fig.update_layout(
-        barmode="group", bargap=0.28, bargroupgap=0.0, height=300,
-        margin=dict(l=10, r=10, t=10, b=14), paper_bgcolor="white", plot_bgcolor="white",
-        font_color=INK, font_size=12, hovermode="x unified", showlegend=False)
-    fig.update_xaxes(gridcolor="rgba(0,0,0,0)", showgrid=False)
-    fig.update_yaxes(gridcolor=LINE, zeroline=False, rangemode="tozero",
-                     title=("$ / hour" if money else "per hour"))
+    if m["is_rate"]:
+        fig.add_bar(x=x, y=[m["actual"].get(h) for h in hours], name="Actual",
+                    marker_color=BLUE, hovertemplate="Actual: " + pref + "%{y:,.2f}<extra></extra>")
+        fig.add_trace(go.Scatter(
+            x=x, y=[m["norm"].get(h) for h in hours], name="Normal", mode="lines+markers",
+            line=dict(color=STEEL, width=2, dash="dot"), marker=dict(size=5, color=STEEL),
+            hovertemplate="Normal: " + pref + "%{y:,.2f}<extra></extra>"))
+        ytitle = ("$ per car" if money else "per car")
+    else:
+        fig.add_bar(x=x, y=[m["target"].get(h) for h in hours], name="Target",
+                    marker_color=GREYF, marker_line=dict(color=STEEL, width=1),
+                    offsetgroup="t", hovertemplate="Target: " + pref + "%{y:,.1f}<extra></extra>")
+        fig.add_bar(x=x, y=[m["actual"].get(h) for h in hours], name="Actual",
+                    marker_color=BLUE, offsetgroup="a", hovertemplate="Actual: " + pref + "%{y:,.1f}<extra></extra>")
+        fig.add_bar(x=x, y=[m["projected"].get(h) for h in hours], name="Projected",
+                    marker_color=GREEN, offsetgroup="a", hovertemplate="Projected: " + pref + "%{y:,.1f}<extra></extra>")
+        fig.update_layout(barmode="group", bargap=0.28, bargroupgap=0.0)
+        ytitle = ("$ / hour" if money else "per hour")
+    fig.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=14),
+                      paper_bgcolor="white", plot_bgcolor="white", font_color=INK,
+                      font_size=12, hovermode="x unified", showlegend=False)
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(gridcolor=LINE, zeroline=False, rangemode="tozero", title=ytitle)
     return fig
 
 
@@ -109,4 +111,74 @@ def dial_svg(m, money, label, dp=0, height=300):
     svg = (f'<svg viewBox="0 0 {W} {H}" width="100%" height="100%" '
            f'xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,Segoe UI,Arial,sans-serif;">'
            + "".join(out) + "</svg>")
-    return f'<div style="width:100%;max-width:640px;margin:0 auto;">{svg}</div>'
+    tip = ('<div id="vtip" style="position:fixed;pointer-events:none;background:#14273F;color:#fff;'
+           'font:11px -apple-system,Segoe UI,Arial,sans-serif;padding:4px 9px;border-radius:6px;'
+           'opacity:0;transition:opacity .08s;z-index:99999;white-space:nowrap;"></div>')
+    script = ('<script>(function(){var t=document.getElementById("vtip");'
+              'document.querySelectorAll("svg path").forEach(function(p){'
+              'var ti=p.querySelector("title");if(!ti)return;p.style.cursor="pointer";'
+              'p.addEventListener("mousemove",function(e){t.textContent=ti.textContent;'
+              't.style.opacity=1;t.style.left=(e.clientX+12)+"px";t.style.top=(e.clientY+12)+"px";});'
+              'p.addEventListener("mouseleave",function(){t.style.opacity=0;});});})();</script>')
+    return f'<div style="width:100%;max-width:640px;margin:0 auto;position:relative;">{svg}{tip}{script}</div>'
+
+
+MIX_COLORS = ["#2E6FB7", "#4A98C9", "#0E86A3", "#7FB2DC", "#C79A3A", "#9FB4CC"]
+
+
+def _chrome(fig, height, legend=False):
+    fig.update_layout(height=height, margin=dict(l=8, r=8, t=8, b=40 if legend else 12),
+                      paper_bgcolor="white", plot_bgcolor="white", font_color=INK, font_size=12,
+                      showlegend=legend,
+                      legend=dict(orientation="h", yanchor="top", y=-0.15, x=0, font=dict(size=11)) if legend else None)
+    fig.update_xaxes(gridcolor=LINE, zeroline=False)
+    fig.update_yaxes(gridcolor=LINE, zeroline=False)
+    return fig
+
+
+def mix_figure(items):
+    """100% stacked dollar-share bar. Hover shows product $ and share%."""
+    rows = [(i.get("description", "?").title(), i.get("amount") or 0)
+            for i in items if (i.get("amount") or 0) > 0]
+    if not rows:
+        return None
+    total = sum(a for _, a in rows) or 1
+    rows.sort(key=lambda t: t[1], reverse=True)
+    keep, other = [], 0.0
+    for n, a in rows:
+        keep.append((n, a)) if a / total >= 0.03 else None
+        if a / total < 0.03:
+            other += a
+    if other > 0:
+        keep.append(("Other", other))
+    fig = go.Figure()
+    for i, (n, a) in enumerate(keep):
+        share = a / total * 100
+        fig.add_bar(x=[share], y=["Today's $"], orientation="h", name=n,
+                    marker_color=MIX_COLORS[i % len(MIX_COLORS)],
+                    text=[f"{share:.0f}%" if share >= 6 else ""], textposition="inside",
+                    insidetextanchor="middle", textfont=dict(color="#fff", size=12),
+                    hovertemplate=f"{n}: ${a:,.0f} (%{{x:.0f}}%)<extra></extra>")
+    fig.update_layout(barmode="stack")
+    fig.update_xaxes(range=[0, 100], ticksuffix="%")
+    fig.update_yaxes(showticklabels=False)
+    return _chrome(fig, 200, legend=True)
+
+
+def big4_figure(big4):
+    """Big 4 attach-rate bars. Hover shows attach %, units and $."""
+    order = ["Air Filter", "Wiper Blade", "Cabin Filter", "Coolant Exchange"]
+    names = [n for n in order if n in big4] or list(big4.keys())
+    if not names:
+        return None
+    attach = [(big4.get(n) or {}).get("attach_pct") or 0 for n in names]
+    units = [(big4.get(n) or {}).get("units") or 0 for n in names]
+    amt = [(big4.get(n) or {}).get("amount") or 0 for n in names]
+    fig = go.Figure(go.Bar(
+        x=attach, y=names, orientation="h", marker_color=DIAL_ACT,
+        text=[f"{a:.1f}%" for a in attach], textposition="outside", cliponaxis=False,
+        customdata=list(zip(units, amt)),
+        hovertemplate="%{y}: %{x:.1f}% of cars<br>%{customdata[0]} units &middot; $%{customdata[1]:,.0f}<extra></extra>"))
+    fig.update_xaxes(title="% of cars", rangemode="tozero")
+    fig.update_yaxes(autorange="reversed")
+    return _chrome(fig, 230)

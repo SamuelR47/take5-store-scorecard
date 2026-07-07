@@ -182,13 +182,23 @@ def dial_legend():
             + item(GREEN, "Ahead of pace") + "</div>")
 
 
-def bar_legend():
-    """Legend for the per-hour bars, placed BELOW the chart to align with the dial legend."""
+def bar_legend(rate=False):
+    """Legend below the bars (aligns with the dial legend). Rate metrics show
+    Actual vs Normal (line); everything else shows Target/Actual/Projected."""
     from config import GREYF, STEEL, BLUE, GREEN
     def item(c, t, brd=""):
         b = f";border:1px solid {brd}" if brd else ""
         return (f'<span style="display:inline-flex;align-items:center;gap:6px;">'
                 f'<span style="width:11px;height:11px;border-radius:3px;background:{c}{b}"></span>{t}</span>')
+    def line_item(c, t):
+        return (f'<span style="display:inline-flex;align-items:center;gap:6px;">'
+                f'<span style="width:14px;height:0;border-top:2px dotted {c};"></span>{t}</span>')
+    inner = (item(BLUE, "Actual") + line_item(STEEL, "Normal")) if rate else (
+        item(GREYF, "Target", STEEL) + item(BLUE, "Actual") + item(GREEN, "Projected"))
     return ('<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;'
-            f'font-size:.74rem;color:{MUTE};margin:-6px 0 6px;">'
-            + item(GREYF, "Target", STEEL) + item(BLUE, "Actual") + item(GREEN, "Projected") + "</div>")
+            f'font-size:.74rem;color:{MUTE};margin:-6px 0 6px;">' + inner + "</div>")
+
+
+def divider():
+    """Thin gray rule between metric sections for visual separation."""
+    return f'<div style="border-top:1px solid {LINE};margin:22px 0 2px;"></div>'

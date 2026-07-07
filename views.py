@@ -97,7 +97,7 @@ def _render_section(key, m):
     with c1:
         st.plotly_chart(charts.bar_figure(m, money, title), use_container_width=True,
                         config={"displayModeBar": False})
-        st.markdown(style.bar_legend(), unsafe_allow_html=True)
+        st.markdown(style.bar_legend(rate=m["is_rate"]), unsafe_allow_html=True)
         if sample:
             st.caption("Normal & Target build as same-weekday hourly history accumulates.")
     with c2:
@@ -171,8 +171,10 @@ def render_store(store, baseline):
                            file_name=f"scorecard_{store}_{now:%Y-%m-%d}.pdf",
                            mime="application/pdf", use_container_width=True)
 
-    for k in SECTION_ORDER:
+    for i, k in enumerate(SECTION_ORDER):
         _render_section(k, metrics[k])
+        if i < len(SECTION_ORDER) - 1:
+            st.markdown(style.divider(), unsafe_allow_html=True)
 
     # ---- product mix ----
     st.markdown(style.section_header("Product mix", "share of today's dollars &amp; Big 4 attachment", ""),
@@ -180,29 +182,19 @@ def render_store(store, baseline):
     items = latest.get("line_items") or []; big4 = latest.get("big4") or {}
     mc1, mc2 = st.columns(2)
     with mc1:
-        if items:
-            total = sum((i.get("amount") or 0) for i in items) or 1
-            ri = sorted([(i.get("description", "?").title(), i.get("amount") or 0)
-                         for i in items if (i.get("amount") or 0) > 0], key=lambda t: t[1], reverse=True)
-            keep, other = [], 0.0
-            for nme, amt in ri:
-                if amt / total >= 0.03:
-                    keep.append((nme, amt, round(amt / total * 100)))
-                else:
-                    other += amt
-            if other:
-                keep.append(("Other", other, round(other / total * 100)))
-            st.markdown(style.product_mix_stack(keep, MIX_COLORS), unsafe_allow_html=True)
+        st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
+                    "Today's dollars by product</div>", unsafe_allow_html=True)
+        fig = charts.mix_figure(items)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.caption("Product detail builds as the day's tickets come in.")
     with mc2:
-        if big4:
-            order = ["Air Filter", "Wiper Blade", "Cabin Filter", "Coolant Exchange"]
-            names = [n for n in order if n in big4] or list(big4.keys())
-            b4 = [{"name": n, "units": (big4.get(n) or {}).get("units") or 0,
-                   "amt": (big4.get(n) or {}).get("amount") or 0,
-                   "attach": (big4.get(n) or {}).get("attach_pct") or 0} for n in names]
-            st.markdown(style.big4_bars(b4), unsafe_allow_html=True)
+        st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
+                    "Big 4 attachment</div>", unsafe_allow_html=True)
+        fig = charts.big4_figure(big4)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.caption("Big 4 attachment builds through the day.")
 
@@ -271,6 +263,13 @@ def render_admin(baseline):
     # ---- ranking (rolling rail: every store, id in grey) ----
     st.markdown(style.section_header("Store ranking", "cars vs pace &mdash; leaders to laggards", ""),
                 unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:.76rem;color:{MUTE};'
+        f'margin:-4px 0 10px;align-items:center;">'
+        f'<span><b>% pace</b> = cars so far vs a normal day by this time of day.</span>'
+        f'<span style="color:{GREEN};">&#9679; ahead (&ge;100%)</span>'
+        f'<span style="color:{AMBER};">&#9679; on pace (90&ndash;100%)</span>'
+        f'<span style="color:{RED};">&#9679; behind (&lt;90%)</span></div>', unsafe_allow_html=True)
     trows = ""
     for i, s in enumerate(calc.rank_stores(stats), 1):
         pct = s["pct"]
@@ -339,7 +338,7 @@ def _heatmap(today_rows, hist_rows, key, source):
         zr, tr = [], []
         for s in stores:
             v = per[s].get(h); zr.append(v)
-            tr.append("&mdash;" if v is None else (f"${v:,.0f}" if money else
+            tr.append("\u2014" if v is None else (f"${v:,.0f}" if money else
                       (f"{v:.2f}" if key in RATE_KEYS else f"{v:,.0f}")))
         z.append(zr); text.append(tr)
     znorm = [[None] * len(stores) for _ in hrs]
@@ -349,14 +348,15 @@ def _heatmap(today_rows, hist_rows, key, source):
         for ri, v in enumerate(col):
             znorm[ri][ci] = (v / mx) if (v is not None and mx) else (0 if v == 0 else None)
     fig = go.Figure(go.Heatmap(
-        z=znorm, x=[CITY.get(s, s) for s in stores], y=[charts.hour_label(h) for h in hrs],
+        z=znorm, x=[f"{CITY.get(s, s)} ({s})" for s in stores], y=[charts.hour_label(h) for h in hrs],
         text=text, texttemplate="%{text}", textfont={"size": 10, "color": INK},
         colorscale=HEAT_SCALE, zmin=0, zmax=1, xgap=3, ygap=3,
         colorbar=dict(title="vs peak", tickformat=".0%"),
-        hovertemplate="%{x} &middot; %{y}: %{text}<extra></extra>"))
+        hovertemplate="%{x}<br>%{y}: %{text}<extra></extra>"))
     fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(_plot(fig, max(320, 30 * len(hrs))), use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(_plot(fig, max(340, 30 * len(hrs)),
+                          title=f"{METRICS[key]['label']} per hour \u2014 {source.lower()}"),
+                    use_container_width=True, config={"displayModeBar": False})
 
 
 def _comparison(picks, today_rows, key):

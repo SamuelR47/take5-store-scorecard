@@ -43,24 +43,16 @@ def main():
         login_view()
         return
     role, store = st.session_state.auth
-    with st.sidebar:
-        st.markdown(f"**{BRAND}**")
-        st.caption(SUBBRAND)
-        if st.button("Refresh data", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    # Top utility row - always on the page, never hidden in a collapsible sidebar.
+    sp, b1, b2 = st.columns([8, 1.2, 1.2])
+    with b1:
+        if st.button("\u21bb Refresh", use_container_width=True):
+            st.cache_data.clear(); st.rerun()
+    with b2:
         if st.button("Log out", use_container_width=True):
-            del st.session_state.auth
-            st.rerun()
-        view, sel = None, None
-        if role == "admin":
-            view = st.radio("View", ["Executive (all stores)", "Single store"])
-            if view == "Single store":
-                sel = st.selectbox("Store", STORE_CODES, format_func=lambda s: f"{CITY.get(s, s)} ({s})")
+            del st.session_state.auth; st.rerun()
     if role == "store":
         render_store(store, baseline)
-    elif view == "Single store":
-        render_store(sel, baseline)
     else:
         render_admin(baseline)
 
