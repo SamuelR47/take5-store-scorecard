@@ -59,5 +59,5 @@ NAVY  = "#14273F"; RED = "#E4002B"; BLUE = "#2E6FB7"; GREEN = "#1E8E4E"
 STEEL = "#9FB4CC"; INK = "#1F2A37"; MUTE = "#5B6B7F"; LINE = "#E3E8EF"
 LIGHT = "#F6F8FC"; GREYF = "#DDE4EE"; CODE = "#8DA2BD"; AMBER = "#E6A200"
 # dial identity (distinct from the bars): sand expected, indigo actual, green ahead, red behind
-EXP = "#EDD9A6"; EXPLN = "#C79A3A"; DIAL_ACT = "#3D51B5"
+EXP = "#CAD5E0"; EXPLN = "#93A2B4"; DIAL_ACT = "#0E86A3"   # slate expected, blue-teal actual
 HEAT_SCALE = [[0.0,"#F7FBFF"],[0.25,"#CFE1F2"],[0.5,"#94C4DF"],[0.75,"#4A98C9"],[1.0,"#1F6FB2"]]

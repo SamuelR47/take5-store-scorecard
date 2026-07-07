@@ -18,15 +18,21 @@ def fmt(v, money=False, dp=0):
 
 GLOBAL_CSS = f"""
 <style>
-  .block-container {{padding-top:1.1rem;padding-bottom:2rem;max-width:1240px;}}
-  #MainMenu, footer, header [data-testid="stToolbar"] {{visibility:hidden;}}
+  .block-container {{padding-top:2.4rem;padding-bottom:2rem;max-width:1240px;}}
+  #MainMenu, footer {{visibility:hidden;}}
+  /* Streamlit's top bar is a white strip that overlays the header - make it
+     transparent and non-clipping so the navy box is never cut off */
+  [data-testid="stHeader"] {{background:rgba(0,0,0,0) !important;height:0 !important;}}
+  [data-testid="stToolbar"] {{visibility:hidden;}}
+  [data-testid="stAppViewContainer"] {{overflow:visible !important;}}
   html, body, [class*="css"] {{color:{INK};}}
   .stApp {{background:#FFFFFF;}}
   .vea-head, .vea-head * {{overflow:visible !important;}}
   /* header - fixed height so the wordmark is TRULY vertically centered */
-  .vea-head {{background:{NAVY};border-radius:12px;min-height:80px;height:80px;
-     padding:0 26px;margin:0 0 8px;display:flex;flex-direction:column;
-     align-items:center;justify-content:center;text-align:center;gap:5px;box-sizing:border-box;}}
+  .vea-head {{background:{NAVY};border-radius:12px;min-height:78px;
+     padding:16px 26px;margin:0 0 8px;display:flex;flex-direction:column;
+     align-items:center;justify-content:center;text-align:center;gap:6px;box-sizing:border-box;}}
+  .vea-head > div {{width:100%;}}
   .vea-brandrow {{display:flex;align-items:center;justify-content:center;gap:12px;}}
   .vea-tick {{width:9px;height:30px;background:{RED};border-radius:2px;flex:none;}}
   .vea-name {{color:#fff;font-size:1.5rem;font-weight:800;letter-spacing:.03em;line-height:1;}}
@@ -106,7 +112,7 @@ def metric_chips(m, money, dp, sample=False):
     pace_top = GREEN if (has and not behind) else (RED if has else STEEL)
     return (
         _chip("So far", fmt(m["so_far"], money, dp), "sample" if sample else "", MUTE)
-        + _chip("Target", fmt(tgt, money, dp), "+10% stretch", MUTE)
+        + _chip("Target", fmt(tgt, money, dp), "", MUTE)
         + _chip("Proj close", fmt(proj, money, dp), proj_sub, proj_col)
         + _chip("Pace", (f'{m["pace"]:.2f}&times;' if has else "&mdash;"),
                 ("behind" if behind else "ahead") if has else "", (RED if behind else GREEN) if has else MUTE, pace_top)
@@ -160,3 +166,15 @@ def ops_tiles(pairs):
 
 def note(html):
     return f'<div class="vea-note">{html}</div>'
+
+
+def dial_legend():
+    """Color key placed BELOW the dial (slate expected, teal actual, green ahead)."""
+    def item(c, t):
+        return (f'<span style="display:inline-flex;align-items:center;gap:6px;">'
+                f'<span style="width:11px;height:11px;border-radius:3px;background:{c};"></span>{t}</span>')
+    from config import EXP, DIAL_ACT, GREEN
+    return ('<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;'
+            f'font-size:.74rem;color:{MUTE};margin:-6px 0 6px;">'
+            + item(EXP, "Expected by now") + item(DIAL_ACT, "Actual (on/under pace)")
+            + item(GREEN, "Ahead of pace") + "</div>")

@@ -80,12 +80,14 @@ def dial_svg(m, money, label, dp=0, height=300):
         nv = norm.get(h, 0) or 0
         av = actual.get(h)
         out.append(f'<path d="{wedge(r_in, r_in + (r_out - r_in) * (nv / maxv), ts, te)}" '
-                   f'fill="{EXP}" stroke="{EXPLN}" stroke-width=".5"></path>')
+                   f'fill="{EXP}" stroke="{EXPLN}" stroke-width=".5">'
+                   f'<title>{hour_label(h)} - expected {pref}{nv:,.{dp}f}</title></path>')
         if av is not None:
             ahead = av >= nv
             mid, hw = (ts + te) / 2, (ts - te) * 0.30
             out.append(f'<path d="{wedge(r_in, r_in + (r_out - r_in) * (av / maxv), mid - hw, mid + hw)}" '
-                       f'fill="{GREEN if ahead else DIAL_ACT}"></path>')
+                       f'fill="{GREEN if ahead else DIAL_ACT}">'
+                       f'<title>{hour_label(h)} - actual {pref}{av:,.{dp}f} vs expected {pref}{nv:,.{dp}f}</title></path>')
             comp_a += av; comp_e += nv
         lx, ly = pt(r_out + 16, (ts + te) / 2)
         out.append(f'<text x="{lx:.0f}" y="{ly:.0f}" font-size="10.5" fill="{MUTE}" '
