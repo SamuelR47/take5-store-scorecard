@@ -80,14 +80,19 @@ def kpi_group(title, rows):
     )
 
 
-def header_bar(store, updated):
+def store_display(store, latest=None):
+    """Friendly store name for display — never the bare store number."""
+    return CITY.get(store) or (latest or {}).get("store_name") or "Your store"
+
+
+def header_bar(name, updated):
     st.markdown(
         '<div style="background:' + NAVY + ';color:#fff;padding:14px 22px;border-radius:8px;'
         'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
         '<div style="font-size:1.25rem;font-weight:700;letter-spacing:.05em;">'
         'TAKE 5 &mdash; DAILY STORE SCORECARD</div>'
-        '<div style="text-align:right;font-size:.82rem;opacity:.9;">Store #' + store
-        + ' &middot; ' + CITY.get(store, "") + '<br>Last updated ' + str(updated) + '</div></div>',
+        '<div style="text-align:right;font-size:.82rem;opacity:.9;">' + name
+        + '<br>Last updated ' + str(updated) + '</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -128,7 +133,7 @@ def render_store(store, baseline):
     sales_base = b.get("net_sales", {}).get(day)
 
     if not rows:
-        header_bar(store, "—")
+        header_bar(store_display(store), "—")
         st.info("No data pulled yet today. This fills in on the first hourly run after opening.")
         return
 
@@ -145,7 +150,7 @@ def render_store(store, baseline):
     cars_by_now = cars_target * frac if cars_target else None
     sales_by_now = sales_target * frac if sales_target else None
 
-    header_bar(store, updated)
+    header_bar(store_display(store, latest), updated)
     st.markdown(
         '<div style="color:' + MUTE + ';font-size:.9rem;margin-bottom:6px;">'
         + now.strftime("%A, %b %d") + ' &middot; comparing today vs a normal '
@@ -209,15 +214,20 @@ def render_store(store, baseline):
          "sub": "&nbsp;"},
     ]), unsafe_allow_html=True)
 
-    lab = latest.get("labor") or {}
+    # Labor + fleet live inside the `data` jsonb payload, not as top-level
+    # Supabase columns — read them from there (with a top-level fallback).
+    payload = latest.get("data") or {}
+    lab = payload.get("labor") or latest.get("labor") or {}
+    fleets_count = payload.get("fleets_count", latest.get("fleets_count")) or 0
+    fleets_amount = payload.get("fleets_amount", latest.get("fleets_amount")) or 0
     st.markdown(kpi_group("Labor & efficiency", [
         {"label": "Hours per car", "value": format(lab.get("hours_per_car") or 0, ".2f"),
          "sub": "labor time per car"},
         {"label": "Labor hours", "value": format(lab.get("hours") or 0, ".1f"), "sub": "total today"},
         {"label": "Labor % of net", "value": format(lab.get("pct_of_net") or 0, ".1f") + "%",
          "sub": "of net sales"},
-        {"label": "Fleet", "value": str(latest.get("fleets_count") or 0) + " / $"
-         + format(latest.get("fleets_amount") or 0, ",.0f"), "sub": "count / sales"},
+        {"label": "Fleet", "value": str(fleets_count) + " / $"
+         + format(fleets_amount, ",.0f"), "sub": "count / sales"},
     ]), unsafe_allow_html=True)
 
     big4 = latest.get("big4") or {}
@@ -297,7 +307,9 @@ def main():
     if role == "store":
         render_store(store, baseline)
     else:
-        render_store(st.sidebar.selectbox("Store", STORE_CODES), baseline)
+        sel = st.sidebar.selectbox("Store", STORE_CODES,
+                                   format_func=lambda s: CITY.get(s, s))
+        render_store(sel, baseline)
 
 
 main()
