@@ -12,9 +12,11 @@ from config import (CENTRAL, HOURS, DOW, STORE_CODES, CITY, STALE_HOURS, METRICS
 from datasource import fetch_today, fetch_history
 
 MIX_COLORS = ["#2E6FB7", "#4A98C9", "#0E86A3", "#7FB2DC", "#C79A3A", "#9FB4CC"]
-ACCURACY_NOTE = ("Norms are the recency-weighted average of the last 4 same-weekday hours "
-                 "(holiday-clean). Target = norm +10%. Projection &amp; pace are measured "
-                 "against the true norm, not the target.")
+ACCURACY_NOTE = ("Normal = recency-weighted average of the last 4 same-weekday hours "
+                 "(holiday-clean). Pace and projection are measured against the normal "
+                 "for this time of day.")
+ADMIN_TARGET_NOTE = ("Admin note: the Target shown to stores = normal +10% (a stretch goal). "
+                     "Pace and projections always use the true normal, not the target.")
 RGB = {"green": (30, 142, 78), "red": (228, 0, 43), "navy": (20, 39, 63)}
 
 
@@ -95,6 +97,7 @@ def _render_section(key, m):
     with c1:
         st.plotly_chart(charts.bar_figure(m, money, title), use_container_width=True,
                         config={"displayModeBar": False})
+        st.markdown(style.bar_legend(), unsafe_allow_html=True)
         if sample:
             st.caption("Normal & Target build as same-weekday hourly history accumulates.")
     with c2:
@@ -126,7 +129,8 @@ def render_store(store, baseline):
     b = baseline.get(store, {})
     daily_norm = {"cars": (b.get("cars", {}).get(day) or {}).get("mean"),
                   "net_sales": (b.get("net_sales", {}).get(day) or {}).get("mean")}
-    metrics = {k: calc.build_metric(k, rows, hist, hours, weekday, daily_norm.get(k))
+    metrics = {k: calc.build_metric(k, rows, hist, hours, weekday, daily_norm.get(k),
+                                    now_hour=now.hour)
                for k in SECTION_ORDER}
 
     st.markdown(style.header(
@@ -233,9 +237,9 @@ def _admin_stats(baseline):
                           "aro": None, "lhpc": None, "pct": None}); continue
         latest = rows[-1]; cars = latest.get("cars") or 0; net = latest.get("net_sales") or 0
         base_h = calc.hour_baselines(hist_rows[s], weekday, "cars", exclude_date=calc.row_date(latest))
-        completed = sorted(calc.to_per_period(calc.cum_by_hour(rows, "cars")))
-        if base_h and completed:
-            exp = sum(base_h.get(h, 0) for h in completed)
+        elapsed = [h for h in hours if h <= now.hour]
+        if base_h and elapsed:
+            exp = sum(base_h.get(h, 0) for h in elapsed)
         else:
             cb = (baseline.get(s, {}).get("cars", {}).get(day) or {}).get("mean")
             exp = cb * frac if cb else None
@@ -262,6 +266,7 @@ def render_admin(baseline):
         ("Ahead / behind", f"{ahead} / {len(live)-ahead}" if live else "&mdash;", "vs pace",
          GREEN if ahead >= len(live)-ahead else RED, GREEN if ahead >= len(live)-ahead else RED, False),
     ]), unsafe_allow_html=True)
+    st.markdown(style.note(ADMIN_TARGET_NOTE), unsafe_allow_html=True)
 
     # ---- ranking (rolling rail: every store, id in grey) ----
     st.markdown(style.section_header("Store ranking", "cars vs pace &mdash; leaders to laggards", ""),

@@ -27,7 +27,7 @@ def bar_figure(m, money, label):
         return name + ": " + pref + "%{y:,.1f}<extra></extra>"
 
     fig = go.Figure()
-    fig.add_bar(x=x, y=target, name="Target (+10%)", marker_color=GREYF,
+    fig.add_bar(x=x, y=target, name="Target", marker_color=GREYF,
                 marker_line=dict(color=STEEL, width=1), offsetgroup="t",
                 hovertemplate=hov("Target"))
     fig.add_bar(x=x, y=actual, name="Actual", marker_color=BLUE, offsetgroup="a",
@@ -36,9 +36,8 @@ def bar_figure(m, money, label):
                 hovertemplate=hov("Projected"))
     fig.update_layout(
         barmode="group", bargap=0.28, bargroupgap=0.0, height=300,
-        margin=dict(l=10, r=10, t=10, b=48), paper_bgcolor="white", plot_bgcolor="white",
-        font_color=INK, font_size=12, hovermode="x unified",
-        legend=dict(orientation="h", yanchor="top", y=-0.16, x=0, font=dict(size=11)))
+        margin=dict(l=10, r=10, t=10, b=14), paper_bgcolor="white", plot_bgcolor="white",
+        font_color=INK, font_size=12, hovermode="x unified", showlegend=False)
     fig.update_xaxes(gridcolor="rgba(0,0,0,0)", showgrid=False)
     fig.update_yaxes(gridcolor=LINE, zeroline=False, rangemode="tozero",
                      title=("$ / hour" if money else "per hour"))

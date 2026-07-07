@@ -192,38 +192,56 @@ def target_curve(norm_by_hour):
     return {h: v * TARGET_MULT for h, v in norm_by_hour.items()}
 
 
-def build_metric(key, rows, hist, hours, weekday, daily_norm=None):
-    """THE data contract: everything a chart/section needs for one metric.
-    norm/target/projected/pace all derived here so the UI never recomputes."""
+def build_metric(key, rows, hist, hours, weekday, daily_norm=None, now_hour=None):
+    """THE data contract. Pace & "expected by now" are based on ELAPSED CLOCK TIME
+    (norm summed over hours up to now_hour), so sparse/lumpy pulls can't inflate it.
+    so_far is the cumulative total booked today. Target = norm x TARGET_MULT (display)."""
     today_date = row_date(rows[-1]) if rows else None
     base_h = hour_baselines(hist, weekday, key, exclude_date=today_date)
     today_cum = cum_by_hour(rows, key)
     today_pp = to_per_period_metric(today_cum, key)
-    actual, projected, pace, completed = forecast_hours(hours, today_pp, base_h)
     target = target_curve(base_h)
-
     is_rate = key in RATE_KEYS
-    if is_rate:                       # rate metric: "so far" = latest cumulative rate
+
+    if now_hour is None:                    # fall back to latest hour with data
+        now_hour = max(today_pp) if today_pp else (max(hours) if hours else None)
+    elapsed = [h for h in hours if now_hour is not None and h <= now_hour]
+    future = [h for h in hours if now_hour is not None and h > now_hour]
+
+    if is_rate:
         so_far = today_cum[max(today_cum)] if today_cum else None
         norm_close = statistics.fmean(list(base_h.values())) if base_h else daily_norm
+        expected_now = norm_close
+        pace = None
+        if so_far is not None and norm_close:
+            pace = max(PACE_CLAMP[0], min(PACE_CLAMP[1], so_far / norm_close))
+        projected = {}
         proj_close = so_far if so_far is not None else norm_close
+        actual = dict(today_pp)
     else:
         so_far = sum(today_pp.values()) if today_pp else 0
+        if base_h and elapsed:
+            expected_now = sum(base_h.get(h, 0) for h in elapsed)
+        elif daily_norm and hours:
+            expected_now = daily_norm * (len(elapsed) / len(hours))
+        else:
+            expected_now = None
+        pace = None
+        if expected_now:
+            pace = max(PACE_CLAMP[0], min(PACE_CLAMP[1], so_far / expected_now))
+        p = pace if pace is not None else 1.0
+        projected = {h: base_h[h] * p for h in future if base_h.get(h) is not None}
         norm_close = (sum(base_h.values()) if base_h else None) or daily_norm
         proj_close = (so_far + sum(projected.values())) if (base_h or projected) else so_far
-    target_close = (norm_close * TARGET_MULT) if norm_close else None
-    now_hour = completed[-1] if completed else None
-    # expected-by-now uses the TRUE norm (never the target)
-    expected_now = sum(base_h.get(h, 0) for h in completed) if (base_h and completed) else (
-        daily_norm * (len(completed) / len(hours)) if (daily_norm and hours) else None)
+        actual = dict(today_pp)
 
+    target_close = (norm_close * TARGET_MULT) if norm_close else None
     return {
         "key": key, "hours": hours, "now_hour": now_hour,
-        "norm": base_h, "target": target,
-        "actual": actual, "projected": projected,
-        "pace": pace, "so_far": so_far,
+        "norm": base_h, "target": target, "actual": actual, "projected": projected,
+        "pace": pace, "so_far": so_far, "expected_now": expected_now,
         "norm_close": norm_close, "target_close": target_close, "proj_close": proj_close,
-        "expected_now": expected_now, "is_rate": is_rate,
+        "is_rate": is_rate,
     }
 
 

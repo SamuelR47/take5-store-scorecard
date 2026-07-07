@@ -20,11 +20,13 @@ GLOBAL_CSS = f"""
 <style>
   .block-container {{padding-top:2.4rem;padding-bottom:2rem;max-width:1240px;}}
   #MainMenu, footer {{visibility:hidden;}}
-  /* Streamlit's top bar is a white strip that overlays the header - make it
-     transparent and non-clipping so the navy box is never cut off */
-  [data-testid="stHeader"] {{background:rgba(0,0,0,0) !important;height:0 !important;}}
+  /* Streamlit's top bar is a white strip - make it transparent (NOT zero-height,
+     which hides the sidebar reopen arrow) so the navy box isn't cut off. */
+  [data-testid="stHeader"] {{background:rgba(0,0,0,0) !important;}}
   [data-testid="stToolbar"] {{visibility:hidden;}}
-  [data-testid="stAppViewContainer"] {{overflow:visible !important;}}
+  /* keep the "open sidebar" chevron visible after the user collapses it */
+  [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"]
+    {{visibility:visible !important;opacity:1 !important;z-index:1000;}}
   html, body, [class*="css"] {{color:{INK};}}
   .stApp {{background:#FFFFFF;}}
   .vea-head, .vea-head * {{overflow:visible !important;}}
@@ -178,3 +180,15 @@ def dial_legend():
             f'font-size:.74rem;color:{MUTE};margin:-6px 0 6px;">'
             + item(EXP, "Expected by now") + item(DIAL_ACT, "Actual (on/under pace)")
             + item(GREEN, "Ahead of pace") + "</div>")
+
+
+def bar_legend():
+    """Legend for the per-hour bars, placed BELOW the chart to align with the dial legend."""
+    from config import GREYF, STEEL, BLUE, GREEN
+    def item(c, t, brd=""):
+        b = f";border:1px solid {brd}" if brd else ""
+        return (f'<span style="display:inline-flex;align-items:center;gap:6px;">'
+                f'<span style="width:11px;height:11px;border-radius:3px;background:{c}{b}"></span>{t}</span>')
+    return ('<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;'
+            f'font-size:.74rem;color:{MUTE};margin:-6px 0 6px;">'
+            + item(GREYF, "Target", STEEL) + item(BLUE, "Actual") + item(GREEN, "Projected") + "</div>")
