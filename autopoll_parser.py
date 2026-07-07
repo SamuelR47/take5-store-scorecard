@@ -32,6 +32,96 @@ def find(pattern, text, group=1, flags=0):
     return m.group(group) if m else None
 
 
+def num(s):
+    """'26.83', '$0.00', '0.00%', '-$9.04' or blank -> float or None."""
+    if s is None:
+        return None
+    s = s.strip().replace(",", "").replace("$", "").replace("%", "")
+    if s in ("", "-"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+# A value token in the LABOR block: hours/percentages/dollars, e.g. "26.83",
+# "1.17", "$0.00", "-$9.04", "4.20%". Used to find where the (possibly
+# multi-word) profit-center name ends and the numeric columns begin. The
+# scraped text collapses the report's aligned columns to single spaces, so we
+# split on tokens rather than column widths.
+_LABOR_VAL = re.compile(r"^-?\$?[\d,]*\.?\d+%?$")
+_LABOR_KEYS = ["hours", "hours_per_car", "cost", "cost_per_car", "pct_of_net"]
+
+
+def parse_labor(text):
+    """Parse the LABOR block into a list of per-profit-center dicts.
+
+    Returns [] when the block is absent (older reports / partial pulls).
+    Handles multiple profit centers, multi-word names (e.g. "STATE INSP"),
+    $/% signs, and $0.00 / blank values.
+    """
+    # Isolate the block: from the "LABOR for" header past its dashed separator,
+    # up to the ancillary footnote (or end of report). Anchoring avoids matching
+    # stray lines elsewhere in the report.
+    m = re.search(
+        r"LABOR\s+for.*?-{3,}\s*\n(?P<body>.*?)(?:\n\s*\*Ancillary|\Z)",
+        text, re.S | re.I,
+    )
+    if not m:
+        return []
+
+    centers = []
+    for line in m.group("body").splitlines():
+        toks = line.split()
+        if not toks:
+            continue
+        # Name = leading non-numeric tokens; values start at the first number.
+        idx = next((i for i, t in enumerate(toks) if _LABOR_VAL.match(t)), None)
+        if not idx:  # None (no values) or 0 (no name) -> header/separator/blank
+            continue
+        name = " ".join(toks[:idx]).strip().rstrip("-").strip()
+        if not name or name.lower() in ("profit center", "total", "hours"):
+            continue
+        vals = toks[idx:]
+        row = {"profit_center": name}
+        for i, k in enumerate(_LABOR_KEYS):
+            row[k] = num(vals[i]) if i < len(vals) else None
+        centers.append(row)
+    return centers
+
+
+def labor_summary(centers):
+    """Collapse per-center rows into the single `labor` dict the dashboard reads.
+
+    Single center -> that row's values. Multiple -> summed hours/cost/pct, with
+    per-car figures re-derived from the summed hours/cost. Empty -> {}.
+    """
+    if not centers:
+        return {}
+    if len(centers) == 1:
+        c = centers[0]
+        return {k: c.get(k) for k in
+                ("hours", "hours_per_car", "cost", "cost_per_car", "pct_of_net")}
+
+    def total(key):
+        vals = [c.get(key) for c in centers if c.get(key) is not None]
+        return round(sum(vals), 2) if vals else None
+
+    hours, cost, pct = total("hours"), total("cost"), total("pct_of_net")
+    # cars = hours / hours_per_car per row, summed, to re-derive blended per-car.
+    cars = sum((c["hours"] / c["hours_per_car"])
+               for c in centers
+               if c.get("hours") and c.get("hours_per_car"))
+    return {
+        "hours": hours,
+        "hours_per_car": round(hours / cars, 2) if (hours and cars) else None,
+        "cost": cost,
+        "cost_per_car": round(cost / cars, 2) if (cost is not None and cars) else None,
+        "pct_of_net": pct,
+    }
+
+
 def parse_report(text):
     d = {}
 
@@ -88,15 +178,10 @@ def parse_report(text):
     d["reprints"] = int(find(r"Reprints:\s*(\d+)", text) or 0)
     d["cancels"]  = int(find(r"Cancels:\s*(\d+)", text) or 0)
 
-    lm = re.search(r"LUBE\s+([\d.]+)\s+([\d.]+)\s+(-?\$[\d,]+\.\d{2})\s+(-?\$[\d,]+\.\d{2})\s+([\d.]+)%", text)
-    if lm:
-        d["labor"] = {
-            "hours": float(lm.group(1)),
-            "hours_per_car": float(lm.group(2)),
-            "cost": money(lm.group(3)),
-            "cost_per_car": money(lm.group(4)),
-            "pct_of_net": float(lm.group(5)),
-        }
+    # ---- Labor block (all profit centers) ----
+    centers = parse_labor(text)
+    d["labor_by_center"] = centers
+    d["labor"] = labor_summary(centers)
 
     # ---- Big 4 attachment (Air Filter, Wiper Blade, Cabin Filter, Coolant Exchange) ----
     cars = d.get("cars") or 0
