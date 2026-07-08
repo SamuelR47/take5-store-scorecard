@@ -3,7 +3,7 @@ SVG dome pace-dial (embedded via components.html). Both pure - bars return a fig
 the dial returns an HTML string - so they are testable without Streamlit."""
 import math
 import plotly.graph_objects as go
-from config import (NAVY, BLUE, GREEN, STEEL, GREYF, INK, MUTE, LINE, RED,
+from config import (NAVY, BLUE, GREEN, STEEL, GREYF, INK, MUTE, LINE, RED, AMBER,
                     EXP, EXPLN, DIAL_ACT)
 
 
@@ -23,10 +23,12 @@ def bar_figure(m, money, label):
     if m["is_rate"]:
         fig.add_bar(x=x, y=[m["actual"].get(h) for h in hours], name="Actual",
                     marker_color=BLUE, hovertemplate="Actual: " + pref + "%{y:,.2f}<extra></extra>")
-        fig.add_trace(go.Scatter(
-            x=x, y=[m["norm"].get(h) for h in hours], name="Normal", mode="lines+markers",
-            line=dict(color=STEEL, width=2, dash="dot"), marker=dict(size=5, color=STEEL),
-            hovertemplate="Normal: " + pref + "%{y:,.2f}<extra></extra>"))
+        tgt = m.get("target_close")
+        if tgt:
+            fig.add_trace(go.Scatter(
+                x=x, y=[tgt] * len(hours), name="Target", mode="lines",
+                line=dict(color=AMBER, width=2, dash="dash"),
+                hovertemplate="Target: " + pref + "%{y:,.2f}<extra></extra>"))
         ytitle = ("$ per car" if money else "per car")
     else:
         fig.add_bar(x=x, y=[m["target"].get(h) for h in hours], name="Target",
@@ -179,3 +181,26 @@ def big4_figure(big4):
     fig.update_xaxes(title="% of cars", rangemode="tozero")
     fig.update_yaxes(autorange="reversed")
     return _chrome(fig, 230)
+
+
+def big4_compare_figure(stats):
+    """Admin/DM: one horizontal bar per store = overall Big 4 attach % (of cars),
+    sorted; hover breaks it down by product."""
+    rows = [r for r in stats if r.get("big4_pct") is not None]
+    if not rows:
+        return None
+    rows.sort(key=lambda r: r["big4_pct"])
+    names = [f"{r['name']} ({r['store']})" for r in rows]
+    pct = [r["big4_pct"] for r in rows]
+    cd = [[r["big4_breakdown"].get("Air Filter", 0), r["big4_breakdown"].get("Cabin Filter", 0),
+           r["big4_breakdown"].get("Wiper Blade", 0), r["big4_breakdown"].get("Coolant Exchange", 0)]
+          for r in rows]
+    fig = go.Figure(go.Bar(
+        x=pct, y=names, orientation="h", marker_color=DIAL_ACT,
+        text=[f"{p:.0f}%" for p in pct], textposition="outside", cliponaxis=False,
+        customdata=cd,
+        hovertemplate=("%{y}: %{x:.0f}% of cars<br>Air %{customdata[0]:.0f}% &middot; "
+                       "Cabin %{customdata[1]:.0f}% &middot; Wiper %{customdata[2]:.0f}% &middot; "
+                       "Coolant %{customdata[3]:.0f}%<extra></extra>")))
+    fig.update_xaxes(title="Big 4 attach % (of cars)", rangemode="tozero")
+    return _chrome(fig, max(240, 30 * len(rows) + 60))

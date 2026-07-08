@@ -48,6 +48,7 @@ PACE_CLAMP = (0.7, 1.5)
 # ***Target = the normal curve inflated to create a stretch goal.***
 # Projections and pace are ALWAYS measured against the true norm, never the target.
 TARGET_MULT = 1.10
+ARO_TARGET = 125.0               # company-wide ARO goal (flat $, all shops)
 
 # Metric registry. money=formats as $, dp=decimal places, rate=not differenced per hour.
 METRICS = {
@@ -68,4 +69,5 @@ STEEL = "#9FB4CC"; INK = "#1F2A37"; MUTE = "#5B6B7F"; LINE = "#E3E8EF"
 LIGHT = "#F6F8FC"; GREYF = "#DDE4EE"; CODE = "#8DA2BD"; AMBER = "#E6A200"
 # dial identity (distinct from the bars): sand expected, indigo actual, green ahead, red behind
 EXP = "#CAD5E0"; EXPLN = "#93A2B4"; DIAL_ACT = "#0E86A3"   # slate expected, blue-teal actual
+PURPLE = "#6C4FB6"                # differentials highlight
 HEAT_SCALE = [[0.0,"#F7FBFF"],[0.25,"#CFE1F2"],[0.5,"#94C4DF"],[0.75,"#4A98C9"],[1.0,"#1F6FB2"]]

@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import calc, style, charts, scorecard_pdf
 from config import (CENTRAL, HOURS, DOW, STORE_CODES, CITY, STALE_HOURS, METRICS,
                     SECTION_ORDER, RATE_KEYS, HEAT_SCALE,
-                    NAVY, BLUE, GREEN, RED, AMBER, MUTE, LINE, LIGHT, INK, STEEL, CODE)
+                    NAVY, BLUE, GREEN, RED, AMBER, MUTE, LINE, LIGHT, INK, STEEL, CODE, PURPLE)
 from datasource import fetch_today, fetch_history
 
 MIX_COLORS = ["#2E6FB7", "#4A98C9", "#0E86A3", "#7FB2DC", "#C79A3A", "#9FB4CC"]
@@ -192,7 +192,11 @@ def render_store(store, baseline):
     st.markdown(style.section_header("Operational detail", "the numbers behind the day", ""),
                 unsafe_allow_html=True)
     lab = calc.labor_block(latest)
+    diff = calc.differentials(latest.get("line_items"))
+    _cars = latest.get("cars") or 0
+    diff_pct = (diff["units"] / _cars * 100) if _cars else 0
     st.markdown(style.ops_tiles([
+        ("Differentials", f"{diff['units']}", f"${diff['amount']:,.0f} \u00b7 {diff_pct:.0f}% of cars"),
         ("Materials %", f"{latest.get('materials_pct') or 0:.0f}%", "of net sales"),
         ("ASA", style.fmt(latest.get("asa"), True, 2), "avg service age"),
         ("Coupons", style.fmt(latest.get("coupons"), True), "redeemed today"),
@@ -201,7 +205,7 @@ def render_store(store, baseline):
         ("Gross sales", style.fmt(latest.get("gross_sales"), True), "before discounts"),
         ("Labor hours", style.fmt(lab.get("hours"), dp=1), "clocked today"),
         ("Labor hrs/car", style.fmt(lab.get("hours_per_car"), dp=2), "efficiency"),
-    ]), unsafe_allow_html=True)
+    ], highlight_first_color=PURPLE), unsafe_allow_html=True)
     st.markdown(style.note(ACCURACY_NOTE), unsafe_allow_html=True)
 
 
@@ -216,7 +220,8 @@ def _admin_stats(baseline, codes):
         rows = fetch_today(s); today_rows[s] = rows; hist_rows[s] = fetch_history(s)
         if not rows:
             stats.append({"store": s, "name": store_name(s), "cars": None, "net": None,
-                          "aro": None, "lhpc": None, "pct": None}); continue
+                          "aro": None, "lhpc": None, "pct": None, "big4_pct": None,
+                          "big4_breakdown": {}, "diff_units": 0, "diff_amt": 0.0}); continue
         latest = rows[-1]; cars = latest.get("cars") or 0; net = latest.get("net_sales") or 0
         base_h = calc.hour_baselines(hist_rows[s], weekday, "cars", exclude_date=calc.row_date(latest))
         elapsed = [h for h in hours if h <= now.hour]
@@ -225,9 +230,13 @@ def _admin_stats(baseline, codes):
         else:
             cb = (baseline.get(s, {}).get("cars", {}).get(day) or {}).get("mean")
             exp = cb * frac if cb else None
+        b4 = calc.big4_attach(latest)
+        dd = calc.differentials(latest.get("line_items"))
         stats.append({"store": s, "name": store_name(s, latest), "cars": cars, "net": net,
                       "aro": (net / cars) if cars else 0, "lhpc": calc.get_metric(latest, "lhpc"),
-                      "pct": (cars / exp * 100) if exp else None})
+                      "pct": (cars / exp * 100) if exp else None,
+                      "big4_pct": b4["pct"], "big4_breakdown": b4["breakdown"],
+                      "diff_units": dd["units"], "diff_amt": dd["amount"]})
     return stats, today_rows, hist_rows
 
 
@@ -251,6 +260,11 @@ def render_admin(baseline, stores=None, scope_label=None):
          GREEN if ahead >= len(live)-ahead else RED, GREEN if ahead >= len(live)-ahead else RED, False),
     ]), unsafe_allow_html=True)
     st.markdown(style.note(ADMIN_TARGET_NOTE), unsafe_allow_html=True)
+    tot_du = sum(s.get("diff_units", 0) for s in live)
+    tot_da = sum(s.get("diff_amt", 0) for s in live)
+    d_pct = (tot_du / tot_cars * 100) if tot_cars else 0
+    d_sell = sum(1 for s in live if s.get("diff_units", 0) > 0)
+    st.markdown(style.diff_box(tot_du, tot_da, d_pct, d_sell, len(live)), unsafe_allow_html=True)
 
     # ---- ranking (rolling rail: every store, id in grey) ----
     st.markdown(style.divider(), unsafe_allow_html=True)
@@ -285,6 +299,16 @@ def render_admin(baseline, stores=None, scope_label=None):
         f'<th style="padding:9px 12px;text-align:right;">Cars</th><th style="padding:9px 12px;text-align:right;">Net</th>'
         f'<th style="padding:9px 12px;text-align:right;">ARO</th><th style="padding:9px 12px;text-align:right;">Labor/car</th>'
         f'<th style="padding:9px 12px;text-align:right;">% pace</th></tr>{trows}</table>', unsafe_allow_html=True)
+
+    # ---- Big 4 attachment comparison ----
+    st.markdown(style.divider(), unsafe_allow_html=True)
+    st.markdown(style.section_header("Big 4 attachment", "overall attach % by store \u2014 hover for the per-product breakdown", ""),
+                unsafe_allow_html=True)
+    b4fig = charts.big4_compare_figure(stats)
+    if b4fig:
+        st.plotly_chart(b4fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.caption("Big 4 attachment builds as stores report.")
 
     # ---- heat map ----
     st.markdown(style.divider(), unsafe_allow_html=True)

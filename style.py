@@ -4,7 +4,7 @@ product mix, Big 4 attach, ops tiles, print score card). No Streamlit imports -
 every function returns an HTML string, so the whole look is testable and lives in
 ONE place (no drift)."""
 from config import (NAVY, RED, BLUE, GREEN, STEEL, INK, MUTE, LINE, LIGHT, GREYF,
-                    CODE, EXP, DIAL_ACT, BRAND, SUBBRAND)
+                    CODE, EXP, DIAL_ACT, AMBER, PURPLE, BRAND, SUBBRAND)
 
 
 def fmt(v, money=False, dp=0):
@@ -160,9 +160,13 @@ def big4_bars(big4, teal=DIAL_ACT):
     return out
 
 
-def ops_tiles(pairs):
-    cells = "".join(f'<div class="vea-tile"><div class="l">{l}</div><div class="v">{v}</div>'
-                    f'<div class="c">{c}</div></div>' for l, v, c in pairs)
+def ops_tiles(pairs, highlight_first_color=None):
+    cells = ""
+    for i, (l, v, c) in enumerate(pairs):
+        extra = (f'border:2px solid {highlight_first_color};'
+                 if (i == 0 and highlight_first_color) else "")
+        cells += (f'<div class="vea-tile" style="{extra}"><div class="l">{l}</div>'
+                  f'<div class="v">{v}</div><div class="c">{c}</div></div>')
     return f'<div style="display:flex;gap:11px;flex-wrap:wrap;">{cells}</div>'
 
 
@@ -185,7 +189,7 @@ def dial_legend():
 def bar_legend(rate=False):
     """Legend below the bars (aligns with the dial legend). Rate metrics show
     Actual vs Normal (line); everything else shows Target/Actual/Projected."""
-    from config import GREYF, STEEL, BLUE, GREEN
+    from config import GREYF, STEEL, BLUE, GREEN, AMBER
     def item(c, t, brd=""):
         b = f";border:1px solid {brd}" if brd else ""
         return (f'<span style="display:inline-flex;align-items:center;gap:6px;">'
@@ -193,7 +197,7 @@ def bar_legend(rate=False):
     def line_item(c, t):
         return (f'<span style="display:inline-flex;align-items:center;gap:6px;">'
                 f'<span style="width:14px;height:0;border-top:2px dotted {c};"></span>{t}</span>')
-    inner = (item(BLUE, "Actual") + line_item(STEEL, "Normal")) if rate else (
+    inner = (item(BLUE, "Actual") + line_item(AMBER, "Target")) if rate else (
         item(GREYF, "Target", STEEL) + item(BLUE, "Actual") + item(GREEN, "Projected"))
     return ('<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;'
             f'font-size:.74rem;color:{MUTE};margin:-6px 0 6px;">' + inner + "</div>")
@@ -202,3 +206,17 @@ def bar_legend(rate=False):
 def divider():
     """Thin gray rule between metric sections for visual separation."""
     return f'<div style="border-top:1px solid {LINE};margin:22px 0 2px;"></div>'
+
+
+def diff_box(units, amount, pct, stores_selling, total_stores):
+    """Small highlighted differentials summary for admin/DM (units, $, % of cars)."""
+    return (f'<div style="border:2px solid {PURPLE};border-radius:12px;padding:11px 16px;'
+            f'display:inline-flex;gap:24px;align-items:center;flex-wrap:wrap;margin:2px 0 6px;">'
+            f'<div style="font-weight:800;color:{PURPLE};font-size:.82rem;text-transform:uppercase;'
+            f'letter-spacing:.05em;">Differentials today</div>'
+            f'<div><span style="font-size:1.3rem;font-weight:800;color:{INK};">{units}</span>'
+            f'<span style="color:{MUTE};font-size:.78rem;"> units</span></div>'
+            f'<div><span style="font-size:1.3rem;font-weight:800;color:{INK};">${amount:,.0f}</span></div>'
+            f'<div><span style="font-size:1.3rem;font-weight:800;color:{INK};">{pct:.0f}%</span>'
+            f'<span style="color:{MUTE};font-size:.78rem;"> of cars</span></div>'
+            f'<div style="color:{MUTE};font-size:.8rem;">{stores_selling}/{total_stores} stores selling</div></div>')

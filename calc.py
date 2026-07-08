@@ -3,8 +3,8 @@ so it is fully unit-testable. Ported verbatim from the proven app, then extended
 with the Target (norm x 1.10) and a single per-metric data contract (build_metric)."""
 import datetime as dt
 import statistics
-from config import (HOURS, RECENCY_W, MAD_K, PACE_CLAMP, TARGET_MULT, RATE_KEYS,
-                    NAVY, GREEN, AMBER, RED, INK)
+from config import (HOURS, RECENCY_W, MAD_K, PACE_CLAMP, TARGET_MULT, ARO_TARGET,
+                    RATE_KEYS, NAVY, GREEN, AMBER, RED, INK)
 
 
 # ---- time / status ----
@@ -236,6 +236,11 @@ def build_metric(key, rows, hist, hours, weekday, daily_norm=None, now_hour=None
         actual = dict(today_pp)
 
     target_close = (norm_close * TARGET_MULT) if norm_close else None
+    if key == "aro":                       # boss: flat $125 ARO goal for all shops
+        target_close = ARO_TARGET
+        expected_now = ARO_TARGET
+        pace = (max(PACE_CLAMP[0], min(PACE_CLAMP[1], so_far / ARO_TARGET))
+                if so_far else None)
     return {
         "key": key, "hours": hours, "now_hour": now_hour,
         "norm": base_h, "target": target, "actual": actual, "projected": projected,
@@ -243,6 +248,31 @@ def build_metric(key, rows, hist, hours, weekday, daily_norm=None, now_hour=None
         "norm_close": norm_close, "target_close": target_close, "proj_close": proj_close,
         "is_rate": is_rate,
     }
+
+
+def differentials(line_items):
+    """Front/Rear/Syn differential line items -> {units, amount}. These live in
+    line_items (not the big4 block), so we scan descriptions for 'differential'."""
+    u, a = 0, 0.0
+    for li in (line_items or []):
+        if "differential" in (li.get("description") or "").lower():
+            u += li.get("units") or 0
+            a += li.get("amount") or 0
+    return {"units": u, "amount": round(a, 2)}
+
+
+def big4_attach(row):
+    """Overall Big 4 attach as % of cars (= total Big 4 units / cars), plus the
+    per-product attach % for hover breakdown."""
+    big4 = row.get("big4") or {}
+    cars = row.get("cars") or 0
+    units = row.get("big4_total_units")
+    if units is None:
+        units = sum((big4.get(n) or {}).get("units") or 0 for n in big4)
+    pct = (units / cars * 100) if cars else None
+    order = ["Air Filter", "Cabin Filter", "Wiper Blade", "Coolant Exchange"]
+    breakdown = {n: ((big4.get(n) or {}).get("attach_pct") or 0) for n in order}
+    return {"pct": pct, "units": units, "breakdown": breakdown}
 
 
 def rank_stores(store_stats):
