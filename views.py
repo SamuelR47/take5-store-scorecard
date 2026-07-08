@@ -176,28 +176,16 @@ def render_store(store, baseline):
         if i < len(SECTION_ORDER) - 1:
             st.markdown(style.divider(), unsafe_allow_html=True)
 
-    # ---- product mix ----
+    # ---- Big 4 attachment (product mix = attachment %, oil-type dollar chart removed) ----
     st.markdown(style.divider(), unsafe_allow_html=True)
-    st.markdown(style.section_header("Product mix", "Big 4 attachment &amp; share of today's dollars", ""),
+    st.markdown(style.section_header("Big 4 attachment", "% of cars that attached each service today", ""),
                 unsafe_allow_html=True)
-    items = latest.get("line_items") or []; big4 = latest.get("big4") or {}
-    mc1, mc2 = st.columns(2)
-    with mc1:
-        st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
-                    "Big 4 attachment</div>", unsafe_allow_html=True)
-        fig = charts.big4_figure(big4)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        else:
-            st.caption("Big 4 attachment builds through the day.")
-    with mc2:
-        st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
-                    "Today's dollars by product</div>", unsafe_allow_html=True)
-        fig = charts.mix_figure(items)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        else:
-            st.caption("Product detail builds as the day's tickets come in.")
+    big4 = latest.get("big4") or {}
+    fig = charts.big4_figure(big4) if big4 else None
+    if fig:
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.caption("Big 4 attachment builds through the day.")
 
     # ---- operational detail ----
     st.markdown(style.divider(), unsafe_allow_html=True)
