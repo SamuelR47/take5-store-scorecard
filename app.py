@@ -3,7 +3,8 @@ Entry point: page config, global CSS, auth, routing. All logic lives in the
 sibling modules (config / calc / datasource / style / charts / views)."""
 import streamlit as st
 
-from config import BRAND, SUBBRAND, STORE_CODES, CITY, ADMIN_FALLBACK, store_password
+from config import (BRAND, SUBBRAND, STORE_CODES, CITY, ADMIN_FALLBACK,
+                    store_password, DISTRICTS)
 import style
 from datasource import load_baseline
 from views import render_store, render_admin
@@ -30,6 +31,9 @@ def login_view():
             if pw in STORE_CODES and pw == store_password(pw):
                 st.session_state.auth = ("store", pw)
                 st.rerun()
+            elif pw in DISTRICTS:
+                st.session_state.auth = ("district", pw)
+                st.rerun()
             elif admin and pw == admin:
                 st.session_state.auth = ("admin", None)
                 st.rerun()
@@ -53,6 +57,9 @@ def main():
             del st.session_state.auth; st.rerun()
     if role == "store":
         render_store(store, baseline)
+    elif role == "district":
+        name, codes = DISTRICTS[store]
+        render_admin(baseline, stores=codes, scope_label=name)
     else:
         render_admin(baseline)
 

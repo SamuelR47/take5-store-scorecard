@@ -22,6 +22,14 @@ def store_password(code):        # kept as a function so the rule lives in one p
     return code
 ADMIN_FALLBACK = "12345"         # used only if st.secrets has no ADMIN_PASSWORD
 
+# Tier 2 - DM / Area Manager access. code -> (display name, [store codes]).
+DISTRICTS = {
+    "1111": ("DM South",      ["1503", "1504", "1505", "1509", "1517"]),
+    "2222": ("Wichita Area",  ["1506", "1508", "1522"]),
+    "3333": ("DM North",      ["1507", "1511", "1513", "1516"]),
+    "4444": ("Central MO",    ["1512", "1515", "1521"]),
+}
+
 # Store open hours in Central by Python weekday (Mon=0..Sun=6): (open, close)
 HOURS = {0: (7, 20), 1: (7, 20), 2: (7, 20), 3: (7, 20), 4: (7, 20), 5: (7, 18), 6: (9, 17)}
 DOW = {0: "Mon", 1: "Tues", 2: "Wed", 3: "Thurs", 4: "Fri", 5: "Sat", 6: "Sun"}

@@ -167,10 +167,7 @@ def mix_figure(items):
 
 def big4_figure(big4):
     """Big 4 attach-rate bars. Hover shows attach %, units and $."""
-    order = ["Coolant Exchange", "Air Filter", "Cabin Filter", "Wiper Blade", "Differential"]
-    names = [n for n in order if n in big4] or list(big4.keys())
-    if not names:
-        return None
+    names = ["Coolant Exchange", "Air Filter", "Cabin Filter", "Wiper Blade", "Differential"]
     attach = [(big4.get(n) or {}).get("attach_pct") or 0 for n in names]
     units = [(big4.get(n) or {}).get("units") or 0 for n in names]
     amt = [(big4.get(n) or {}).get("amount") or 0 for n in names]

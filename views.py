@@ -177,7 +177,8 @@ def render_store(store, baseline):
             st.markdown(style.divider(), unsafe_allow_html=True)
 
     # ---- product mix ----
-    st.markdown(style.section_header("Product mix", "share of today's dollars &amp; Big 4 attachment", ""),
+    st.markdown(style.divider(), unsafe_allow_html=True)
+    st.markdown(style.section_header("Product mix", "share of today's dollars &amp; Big 4/5 attachment", ""),
                 unsafe_allow_html=True)
     items = latest.get("line_items") or []; big4 = latest.get("big4") or {}
     mc1, mc2 = st.columns(2)
@@ -219,11 +220,11 @@ def render_store(store, baseline):
 # ==========================================================================
 # Admin (all stores)
 # ==========================================================================
-def _admin_stats(baseline):
+def _admin_stats(baseline, codes):
     now = dt.datetime.now(CENTRAL); weekday = now.weekday(); day = DOW[weekday]
     o, c = HOURS[weekday]; hours = list(range(o, c + 1)); frac = calc.frac_elapsed(now)
     stats, today_rows, hist_rows = [], {}, {}
-    for s in STORE_CODES:
+    for s in codes:
         rows = fetch_today(s); today_rows[s] = rows; hist_rows[s] = fetch_history(s)
         if not rows:
             stats.append({"store": s, "name": store_name(s), "cars": None, "net": None,
@@ -242,11 +243,13 @@ def _admin_stats(baseline):
     return stats, today_rows, hist_rows
 
 
-def render_admin(baseline):
+def render_admin(baseline, stores=None, scope_label=None):
+    codes = stores or STORE_CODES
     now = dt.datetime.now(CENTRAL)
-    st.markdown(style.header(f"All Stores &middot; {now:%A, %b %-d} &middot; "
+    _lbl = (f"{scope_label} &middot; {len(codes)} stores" if scope_label else "All Stores")
+    st.markdown(style.header(f"{_lbl} &middot; {now:%A, %b %-d} &middot; "
                 f"{calc.frac_elapsed(now)*100:.0f}% through the day"), unsafe_allow_html=True)
-    stats, today_rows, hist_rows = _admin_stats(baseline)
+    stats, today_rows, hist_rows = _admin_stats(baseline, codes)
     live = [s for s in stats if s["cars"] is not None]
     tot_cars = sum(s["cars"] for s in live); tot_net = sum(s["net"] for s in live)
     avg_aro = (tot_net / tot_cars) if tot_cars else 0
@@ -262,6 +265,7 @@ def render_admin(baseline):
     st.markdown(style.note(ADMIN_TARGET_NOTE), unsafe_allow_html=True)
 
     # ---- ranking (rolling rail: every store, id in grey) ----
+    st.markdown(style.divider(), unsafe_allow_html=True)
     st.markdown(style.section_header("Store ranking", "cars vs pace &mdash; leaders to laggards", ""),
                 unsafe_allow_html=True)
     st.markdown(
@@ -295,34 +299,37 @@ def render_admin(baseline):
         f'<th style="padding:9px 12px;text-align:right;">% pace</th></tr>{trows}</table>', unsafe_allow_html=True)
 
     # ---- heat map ----
+    st.markdown(style.divider(), unsafe_allow_html=True)
     st.markdown(style.section_header("Heat map", "per-hour pattern, shaded vs each store's own peak", ""),
                 unsafe_allow_html=True)
     hc1, hc2 = st.columns(2)
     hm_key = hc1.radio("Metric", list(METRICS.keys()), horizontal=True,
                        format_func=lambda k: METRICS[k]["label"], key="hm_metric")
     hm_src = hc2.radio("Show", ["Today (actual)", "Normal pattern"], horizontal=True, key="hm_src")
-    _heatmap(today_rows, hist_rows, hm_key, hm_src)
+    _heatmap(today_rows, hist_rows, hm_key, hm_src, codes)
 
     # ---- compare stores ----
+    st.markdown(style.divider(), unsafe_allow_html=True)
     st.markdown(style.section_header("Compare stores", "per-hour, overlaid", ""), unsafe_allow_html=True)
-    picks = st.multiselect("Stores", STORE_CODES, default=STORE_CODES[:5],
+    picks = st.multiselect("Stores", codes, default=codes[:5],
                            format_func=lambda s: f"{CITY.get(s, s)} ({s})", key="cmp_stores")
     cmp_key = st.radio("Metric", list(METRICS.keys()), horizontal=True,
                        format_func=lambda k: METRICS[k]["label"], key="cmp_metric")
     _comparison(picks, today_rows, cmp_key)
 
     # ---- drill-down ----
+    st.markdown(style.divider(), unsafe_allow_html=True)
     st.markdown(style.section_header("Store drill-down", "the exact view a manager sees", ""),
                 unsafe_allow_html=True)
-    sel = st.selectbox("Store", STORE_CODES, format_func=lambda s: f"{CITY.get(s, s)} ({s})", key="adm_drill")
+    sel = st.selectbox("Store", codes, format_func=lambda s: f"{CITY.get(s, s)} ({s})", key="adm_drill")
     with st.expander(f"Open {CITY.get(sel, sel)} scorecard", expanded=False):
         render_store(sel, baseline)
 
 
-def _heatmap(today_rows, hist_rows, key, source):
+def _heatmap(today_rows, hist_rows, key, source, codes):
     now = dt.datetime.now(CENTRAL); weekday = now.weekday()
     o, c = HOURS[weekday]; hrs = list(range(o, c + 1))
-    stores = [s for s in STORE_CODES if (today_rows.get(s) or hist_rows.get(s))]
+    stores = [s for s in codes if (today_rows.get(s) or hist_rows.get(s))]
     if not stores:
         st.info("No store data yet for the heat map."); return
     per = {}
@@ -379,5 +386,5 @@ def _comparison(picks, today_rows, key):
         st.info("No per-hour data yet today for the selected stores."); return
     fig.update_layout(barmode="group")
     fig.update_yaxes(title=("$ per hour" if money else "per hour"), rangemode="tozero")
-    st.plotly_chart(_plot(fig, 360, legend="bottom"), use_container_width=True,
+    st.plotly_chart(_plot(fig, 360, title=f"{METRICS[key]['label']} per hour \u2014 selected stores", legend="bottom"), use_container_width=True,
                     config={"displayModeBar": False})
