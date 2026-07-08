@@ -184,23 +184,25 @@ def big4_figure(big4):
 
 
 def big4_compare_figure(stats):
-    """Admin/DM: one horizontal bar per store = overall Big 4 attach % (of cars),
-    sorted; hover breaks it down by product."""
+    """Admin/DM: one horizontal bar per store = overall Big 4/5 attach % (of cars),
+    differentials folded in; hover breaks it down by all five services."""
     rows = [r for r in stats if r.get("big4_pct") is not None]
     if not rows:
         return None
-    rows.sort(key=lambda r: r["big4_pct"])
+    for r in rows:
+        r["_b45"] = (r["big4_pct"] or 0) + (r.get("diff_pct") or 0)
+    rows.sort(key=lambda r: r["_b45"])
     names = [f"{r['name']} ({r['store']})" for r in rows]
-    pct = [r["big4_pct"] for r in rows]
+    pct = [r["_b45"] for r in rows]
     cd = [[r["big4_breakdown"].get("Air Filter", 0), r["big4_breakdown"].get("Cabin Filter", 0),
-           r["big4_breakdown"].get("Wiper Blade", 0), r["big4_breakdown"].get("Coolant Exchange", 0)]
-          for r in rows]
+           r["big4_breakdown"].get("Wiper Blade", 0), r["big4_breakdown"].get("Coolant Exchange", 0),
+           r.get("diff_pct") or 0] for r in rows]
     fig = go.Figure(go.Bar(
         x=pct, y=names, orientation="h", marker_color=DIAL_ACT,
         text=[f"{p:.0f}%" for p in pct], textposition="outside", cliponaxis=False,
         customdata=cd,
         hovertemplate=("%{y}: %{x:.0f}% of cars<br>Air %{customdata[0]:.0f}% &middot; "
                        "Cabin %{customdata[1]:.0f}% &middot; Wiper %{customdata[2]:.0f}% &middot; "
-                       "Coolant %{customdata[3]:.0f}%<extra></extra>")))
-    fig.update_xaxes(title="Big 4 attach % (of cars)", rangemode="tozero")
+                       "Coolant %{customdata[3]:.0f}% &middot; Diff %{customdata[4]:.0f}%<extra></extra>")))
+    fig.update_xaxes(title="Big 4/5 attach % (of cars)", rangemode="tozero")
     return _chrome(fig, max(240, 30 * len(rows) + 60))

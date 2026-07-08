@@ -6,7 +6,7 @@ import streamlit.components.v1 as components
 import plotly.graph_objects as go
 
 import calc, style, charts, scorecard_pdf
-from config import (CENTRAL, HOURS, DOW, STORE_CODES, CITY, STALE_HOURS, METRICS,
+from config import (CENTRAL, HOURS, DOW, STORE_CODES, CITY, STALE_HOURS, METRICS, REGIONS,
                     SECTION_ORDER, RATE_KEYS, HEAT_SCALE,
                     NAVY, BLUE, GREEN, RED, AMBER, MUTE, LINE, LIGHT, INK, STEEL, CODE, PURPLE)
 from datasource import fetch_today, fetch_history
@@ -84,7 +84,7 @@ def _section_note(key):
             "aro": "revenue per car through the day",
             "net_sales": "revenue per hour vs normal & target, plus the pace dial",
             "big4_total_units": "attachment units per hour, plus the pace dial",
-            "labor_hours": "labor hours per hour, plus the pace dial"}.get(key, "")
+            "labor_hours": "suggested labor (normal cars x 1.10) vs actual, plus the pace dial"}.get(key, "")
 
 
 def _render_section(key, m):
@@ -155,16 +155,28 @@ def render_store(store, baseline):
                   GREEN if ahead >= tot - ahead else RED, False))
     st.markdown(style.kpi_strip(cards), unsafe_allow_html=True)
 
-    # ---- Download score card (real PDF, KPI only) ----
-    pdf_cards = []
-    for k in SECTION_ORDER:
-        m = metrics[k]; meta = METRICS[k]
-        has = m["pace"] is not None
-        sub = (f'{m["pace"]:.2f}x {"ahead" if (has and m["pace"]>=1) else "behind"}' if has else "building")
-        pdf_cards.append((meta["label"], style.fmt(m["so_far"], meta["money"], meta["dp"])
-                          .replace("&mdash;", "-"), sub, _pace_rgb(m)))
+    # ---- Download score card (KPI-only PDF, symmetric 3x2, timestamped) ----
+    _b4 = calc.big4_attach(latest)
+    _diff = calc.differentials(latest.get("line_items"))
+    _dpct = (_diff["units"] / (latest.get("cars") or 1) * 100)
+    def _sub(k):
+        m = metrics[k]
+        return (f'{m["pace"]:.2f}x {"ahead" if m["pace"] >= 1 else "behind"}'
+                if m["pace"] is not None else "building")
+    def _v(k, money, dp):
+        return style.fmt(metrics[k]["so_far"], money, dp).replace("&mdash;", "-")
+    pdf_cards = [
+        ("Cars", _v("cars", False, 0), _sub("cars"), _pace_rgb(metrics["cars"])),
+        ("ARO", _v("aro", True, 2), _sub("aro"), _pace_rgb(metrics["aro"])),
+        ("Net revenue", _v("net_sales", True, 0), _sub("net_sales"), _pace_rgb(metrics["net_sales"])),
+        ("Big 4 %", (f"{_b4['pct']:.0f}%" if _b4["pct"] is not None else "-"),
+         f"{_b4['units']} units", RGB["navy"]),
+        ("Labor hours", _v("labor_hours", False, 1), _sub("labor_hours"), _pace_rgb(metrics["labor_hours"])),
+        ("Differentials", str(_diff["units"]), f"${_diff['amount']:,.0f} \u00b7 {_dpct:.0f}% of cars", (108, 79, 182)),
+    ]
+    as_of = latest.get("report_timestamp") or now.strftime("%-I:%M %p")
     pdf_bytes = scorecard_pdf.build_scorecard_pdf(
-        store_name(store, latest), store, now.strftime("%A, %b %-d %Y"), headline, pdf_cards)
+        store_name(store, latest), store, now.strftime("%A, %b %-d %Y"), as_of, pdf_cards)
     lc, rc = st.columns([3, 1])
     with rc:
         st.download_button("⬇ Score card (PDF)", pdf_bytes,
@@ -221,7 +233,7 @@ def _admin_stats(baseline, codes):
         if not rows:
             stats.append({"store": s, "name": store_name(s), "cars": None, "net": None,
                           "aro": None, "lhpc": None, "pct": None, "big4_pct": None,
-                          "big4_breakdown": {}, "diff_units": 0, "diff_amt": 0.0}); continue
+                          "big4_breakdown": {}, "diff_units": 0, "diff_amt": 0.0, "diff_pct": 0}); continue
         latest = rows[-1]; cars = latest.get("cars") or 0; net = latest.get("net_sales") or 0
         base_h = calc.hour_baselines(hist_rows[s], weekday, "cars", exclude_date=calc.row_date(latest))
         elapsed = [h for h in hours if h <= now.hour]
@@ -236,12 +248,19 @@ def _admin_stats(baseline, codes):
                       "aro": (net / cars) if cars else 0, "lhpc": calc.get_metric(latest, "lhpc"),
                       "pct": (cars / exp * 100) if exp else None,
                       "big4_pct": b4["pct"], "big4_breakdown": b4["breakdown"],
-                      "diff_units": dd["units"], "diff_amt": dd["amount"]})
+                      "diff_units": dd["units"], "diff_amt": dd["amount"],
+                      "diff_pct": (dd["units"] / cars * 100) if cars else 0})
     return stats, today_rows, hist_rows
 
 
 def render_admin(baseline, stores=None, scope_label=None):
     codes = stores or STORE_CODES
+    if scope_label is None:                      # full exec view -> region filter
+        region = st.selectbox("Filter by region", ["All regions"] + list(REGIONS),
+                              key="adm_region")
+        if region != "All regions":
+            codes = [c for c in REGIONS[region] if c in codes]
+            scope_label = region
     now = dt.datetime.now(CENTRAL)
     _lbl = (f"{scope_label} &middot; {len(codes)} stores" if scope_label else "All Stores")
     st.markdown(style.header(f"{_lbl} &middot; {now:%A, %b %-d} &middot; "
@@ -260,11 +279,6 @@ def render_admin(baseline, stores=None, scope_label=None):
          GREEN if ahead >= len(live)-ahead else RED, GREEN if ahead >= len(live)-ahead else RED, False),
     ]), unsafe_allow_html=True)
     st.markdown(style.note(ADMIN_TARGET_NOTE), unsafe_allow_html=True)
-    tot_du = sum(s.get("diff_units", 0) for s in live)
-    tot_da = sum(s.get("diff_amt", 0) for s in live)
-    d_pct = (tot_du / tot_cars * 100) if tot_cars else 0
-    d_sell = sum(1 for s in live if s.get("diff_units", 0) > 0)
-    st.markdown(style.diff_box(tot_du, tot_da, d_pct, d_sell, len(live)), unsafe_allow_html=True)
 
     # ---- ranking (rolling rail: every store, id in grey) ----
     st.markdown(style.divider(), unsafe_allow_html=True)
@@ -302,7 +316,7 @@ def render_admin(baseline, stores=None, scope_label=None):
 
     # ---- Big 4 attachment comparison ----
     st.markdown(style.divider(), unsafe_allow_html=True)
-    st.markdown(style.section_header("Big 4 attachment", "overall attach % by store \u2014 hover for the per-product breakdown", ""),
+    st.markdown(style.section_header("Big 4/5 attachment", "overall attach % by store (incl. differentials) \u2014 hover for the breakdown", ""),
                 unsafe_allow_html=True)
     b4fig = charts.big4_compare_figure(stats)
     if b4fig:
@@ -312,7 +326,7 @@ def render_admin(baseline, stores=None, scope_label=None):
 
     # ---- heat map ----
     st.markdown(style.divider(), unsafe_allow_html=True)
-    st.markdown(style.section_header("Heat map", "per-hour pattern, shaded vs each store's own peak", ""),
+    st.markdown(style.section_header("Heat map", "cars per hour, shaded by volume (darker = busier)", ""),
                 unsafe_allow_html=True)
     hc1, hc2 = st.columns(2)
     hm_key = hc1.radio("Metric", list(METRICS.keys()), horizontal=True,
@@ -361,17 +375,12 @@ def _heatmap(today_rows, hist_rows, key, source, codes):
             tr.append("\u2014" if v is None else (f"${v:,.0f}" if money else
                       (f"{v:.2f}" if key in RATE_KEYS else f"{v:,.0f}")))
         z.append(zr); text.append(tr)
-    znorm = [[None] * len(stores) for _ in hrs]
-    for ci in range(len(stores)):
-        col = [z[ri][ci] for ri in range(len(hrs))]
-        nums = [v for v in col if v is not None]; mx = max(nums) if nums else 0
-        for ri, v in enumerate(col):
-            znorm[ri][ci] = (v / mx) if (v is not None and mx) else (0 if v == 0 else None)
+    gmax = max((v for row in z for v in row if v is not None), default=0) or 1
     fig = go.Figure(go.Heatmap(
-        z=znorm, x=[f"{CITY.get(s, s)} ({s})" for s in stores], y=[charts.hour_label(h) for h in hrs],
+        z=z, x=[f"{CITY.get(s, s)} ({s})" for s in stores], y=[charts.hour_label(h) for h in hrs],
         text=text, texttemplate="%{text}", textfont={"size": 10, "color": INK},
-        colorscale=HEAT_SCALE, zmin=0, zmax=1, xgap=3, ygap=3,
-        colorbar=dict(title="vs peak", tickformat=".0%"),
+        colorscale=HEAT_SCALE, zmin=0, zmax=gmax, xgap=3, ygap=3,
+        colorbar=dict(title=METRICS[key]["label"]),
         hovertemplate="%{x}<br>%{y}: %{text}<extra></extra>"))
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(_plot(fig, max(340, 30 * len(hrs)),

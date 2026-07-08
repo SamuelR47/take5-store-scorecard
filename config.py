@@ -23,6 +23,14 @@ def store_password(code):        # kept as a function so the rule lives in one p
 ADMIN_FALLBACK = "12345"         # used only if st.secrets has no ADMIN_PASSWORD
 
 # Tier 2 - DM / Area Manager access. code -> (display name, [store codes]).
+REGIONS = {
+    "Central MO":  ["1512", "1515", "1521"],
+    "Iowa":        ["1507", "1511", "1516"],
+    "Nebraska":    ["1513"],
+    "Springfield": ["1503", "1504", "1505", "1509", "1517"],
+    "Wichita":     ["1506", "1508", "1522"],
+}
+
 DISTRICTS = {
     "1111": ("DM South",      ["1503", "1504", "1505", "1509", "1517"]),
     "2222": ("Wichita Area",  ["1506", "1508", "1522"]),
@@ -49,6 +57,7 @@ PACE_CLAMP = (0.7, 1.5)
 # Projections and pace are ALWAYS measured against the true norm, never the target.
 TARGET_MULT = 1.10
 ARO_TARGET = 125.0               # company-wide ARO goal (flat $, all shops)
+LHPC_TARGET = 1.10               # labor hours per car target (spec 11.1)
 
 # Metric registry. money=formats as $, dp=decimal places, rate=not differenced per hour.
 METRICS = {

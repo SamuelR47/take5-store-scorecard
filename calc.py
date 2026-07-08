@@ -4,7 +4,7 @@ with the Target (norm x 1.10) and a single per-metric data contract (build_metri
 import datetime as dt
 import statistics
 from config import (HOURS, RECENCY_W, MAD_K, PACE_CLAMP, TARGET_MULT, ARO_TARGET,
-                    RATE_KEYS, NAVY, GREEN, AMBER, RED, INK)
+                    LHPC_TARGET, RATE_KEYS, NAVY, GREEN, AMBER, RED, INK)
 
 
 # ---- time / status ----
@@ -202,6 +202,10 @@ def build_metric(key, rows, hist, hours, weekday, daily_norm=None, now_hour=None
     today_pp = to_per_period_metric(today_cum, key)
     target = target_curve(base_h)
     is_rate = key in RATE_KEYS
+    if key == "labor_hours":               # spec 11.1: suggested labor = normal cars x LHPC target
+        cars_base = hour_baselines(hist, weekday, "cars", exclude_date=today_date)
+        base_h = {h: round(cars_base[h] * LHPC_TARGET, 2) for h in cars_base}
+        target = dict(base_h)              # suggested hours ARE the target (no extra +10%)
 
     if now_hour is None:                    # fall back to latest hour with data
         now_hour = max(today_pp) if today_pp else (max(hours) if hours else None)
@@ -241,6 +245,8 @@ def build_metric(key, rows, hist, hours, weekday, daily_norm=None, now_hour=None
         expected_now = ARO_TARGET
         pace = (max(PACE_CLAMP[0], min(PACE_CLAMP[1], so_far / ARO_TARGET))
                 if so_far else None)
+    if key == "labor_hours":               # suggested target already baked into base_h
+        target_close = norm_close
     return {
         "key": key, "hours": hours, "now_hour": now_hour,
         "norm": base_h, "target": target, "actual": actual, "projected": projected,
