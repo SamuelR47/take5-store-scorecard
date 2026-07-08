@@ -178,11 +178,19 @@ def render_store(store, baseline):
 
     # ---- product mix ----
     st.markdown(style.divider(), unsafe_allow_html=True)
-    st.markdown(style.section_header("Product mix", "share of today's dollars &amp; Big 4/5 attachment", ""),
+    st.markdown(style.section_header("Product mix", "Big 4 attachment &amp; share of today's dollars", ""),
                 unsafe_allow_html=True)
     items = latest.get("line_items") or []; big4 = latest.get("big4") or {}
     mc1, mc2 = st.columns(2)
     with mc1:
+        st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
+                    "Big 4 attachment</div>", unsafe_allow_html=True)
+        fig = charts.big4_figure(big4)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.caption("Big 4 attachment builds through the day.")
+    with mc2:
         st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
                     "Today's dollars by product</div>", unsafe_allow_html=True)
         fig = charts.mix_figure(items)
@@ -190,14 +198,6 @@ def render_store(store, baseline):
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.caption("Product detail builds as the day's tickets come in.")
-    with mc2:
-        st.markdown('<div style="font-size:.92rem;font-weight:700;color:#14273F;margin:0 0 2px;">'
-                    "Big 4/5 attachment</div>", unsafe_allow_html=True)
-        fig = charts.big4_figure(big4)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        else:
-            st.caption("Big 4 attachment builds through the day.")
 
     # ---- operational detail ----
     st.markdown(style.divider(), unsafe_allow_html=True)
