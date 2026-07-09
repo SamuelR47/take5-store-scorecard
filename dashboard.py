@@ -164,9 +164,13 @@ function renderStore(sp){
   CH.push(new Chart(c_net,{type:'line',data:{labels:L,datasets:[ln('Actual',sp.net.actual,C.blue,[],fB),ln('Estimated',sp.net.est,C.green,[6,4])]},options:opts(sp.now)}));
   CH.push(new Chart(c_aro,{type:'line',data:{labels:L,datasets:[ln('ARO',sp.aro.run,C.blue,[],fB)]},options:opts(sp.now,{t:tline(125,C.amber,'$125')})}));
   CH.push(new Chart(c_big4,{type:'line',data:{labels:L,datasets:[ln('Big 4 %',sp.big4.run,C.teal,[],'rgba(14,116,144,.10)')]},options:opts(sp.now,{t:tline(sp.big4.target,C.amber,sp.big4.target+'%')})}));
-  const MX=30;
+  // scale the track to whatever fits (largest attach or target across the 4
+  // items) with 15% headroom, floored at 30 so normal days aren't over-zoomed;
+  // clamp every position to 100% so a high attach can never overflow the track.
+  const MX=Math.max(30,...sp.big4.items.flatMap(it=>[it.attach,it.target]))*1.15;
+  const pos=v=>Math.min(100,v/MX*100);
   document.getElementById('bul').innerHTML=sp.big4.items.map((it,i)=>{const r=it.attach/it.target,sc=r>=1?C.green:(r>=.6?C.amber:C.red),col=IC[i];
-    return `<div class="bullet"><span class="bn">${it.name}</span><div class="track"><span class="fill" style="width:${it.attach/MX*100}%;background:${col}"></span><span class="tgt" style="left:${it.target/MX*100}%"></span><span class="act" style="left:${it.attach/MX*100}%;background:${col}"></span></div><span class="bv" style="color:${sc}">${it.attach}% / ${it.target}%</span></div>`;}).join('');
+    return `<div class="bullet"><span class="bn">${it.name}</span><div class="track"><span class="fill" style="width:${pos(it.attach)}%;background:${col}"></span><span class="tgt" style="left:${pos(it.target)}%"></span><span class="act" style="left:${pos(it.attach)}%;background:${col}"></span></div><span class="bv" style="color:${sc}">${it.attach}% / ${it.target}%</span></div>`;}).join('');
   CH.push(new Chart(c_lhpc,{data:{labels:L,datasets:[
     {type:'bar',label:'Hours',data:sp.lhpc.hours,backgroundColor:'rgba(108,79,182,.15)',yAxisID:'y1',borderRadius:3,barPercentage:.72,order:2},
     {type:'line',label:'Rolling LHPC',data:sp.lhpc.roll,borderColor:C.purple,borderWidth:2.6,tension:.4,pointRadius:0,pointHoverRadius:4,yAxisID:'y',order:1,borderCapStyle:'round'}]},

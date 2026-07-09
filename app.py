@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import streamlit as st
 import streamlit.components.v1 as components
 
-from config import (BRAND, CENTRAL, STORE_CODES, CITY, REGIONS, DISTRICTS, ADMIN_FALLBACK,
+from config import (BRAND, CENTRAL, STORE_CODES, CITY, REGIONS, DISTRICTS,
                     HOURS, NAVY, GREEN, RED, AMBER, PURPLE)
 import calc, dashboard, scorecard_pdf
 from datasource import fetch_today, fetch_history
@@ -45,7 +45,7 @@ def login_view():
             pw = st.text_input("code", type="password", label_visibility="collapsed", placeholder="Access code")
             ok = st.form_submit_button("Enter", type="primary", use_container_width=True)
         if ok:
-            admin = st.secrets.get("ADMIN_PASSWORD", ADMIN_FALLBACK)
+            admin = st.secrets.get("ADMIN_PASSWORD")  # no hardcoded fallback: admin fails closed if the secret is unset
             if pw in STORE_CODES:
                 st.session_state.auth = ("store", pw); st.rerun()
             elif pw in DISTRICTS:
@@ -65,15 +65,27 @@ def build_payload(tier, allowed, scope_label, stamp):
         return s, fetch_today(s), fetch_history(s)
     with ThreadPoolExecutor(max_workers=8) as ex:
         fetched = list(ex.map(_pull, allowed))
-    stores, rows = {}, {}
+    # Per-store isolation: one store's bad data must never crash the whole
+    # dashboard for everyone. Build each store inside its own try/except; drop
+    # and log any that fail, keeping the original order for the rest.
+    stores, rows, ok = {}, {}, []
     for s, td, hist in fetched:
-        stores[s] = calc.build_store(s, CITY[s], region_of(s), td, hist, now)
-        rows[s] = calc.build_admin_row(s, CITY[s], td, hist, now)
+        try:
+            stores[s] = calc.build_store(s, CITY[s], region_of(s), td, hist, now)
+            rows[s] = calc.build_admin_row(s, CITY[s], td, hist, now)
+            ok.append(s)
+        except Exception as e:
+            print(f"[payload] store {s} skipped: {type(e).__name__}: {e}")
+    allowed = [s for s in allowed if s in ok]
     pdf = {}
     for s in allowed:
         sp = stores[s]
-        pdf[s] = base64.b64encode(scorecard_pdf.build_scorecard_pdf(
-            sp["name"], s, sp["date"], sp["asof"], score_card_cards(sp))).decode()
+        try:
+            pdf[s] = base64.b64encode(scorecard_pdf.build_scorecard_pdf(
+                sp["name"], s, sp["date"], sp["asof"], score_card_cards(sp))).decode()
+        except Exception as e:
+            print(f"[payload] pdf for store {s} skipped: {type(e).__name__}: {e}")
+            pdf[s] = ""
     return {"tier": tier, "scope_label": scope_label, "allowed": allowed,
             "regions": REGIONS if tier == "admin" else {}, "stores": stores, "rows": rows,
             "hours": hours, "date": stores[allowed[0]]["date"] if allowed else "",
