@@ -126,6 +126,16 @@ def big4_attach(latest):
     br={n:((b.get(n) or {}).get("attach_pct") or 0) for n in order}
     return {"pct":(units/cars*100) if cars else None,"units":units,"breakdown":br}
 
+def open_time(latest):
+    """Real store open time = 'TIME OPENED' from the report body, captured by the
+    parser into the `data` blob. NOT report_timestamp (that's the report's as-of
+    time and changes every pull). Normalize '5:57AM' -> '5:57 AM'; fall back to
+    report_timestamp only if TIME OPENED is missing."""
+    t=((latest.get("data") or {}).get("time_opened") or "").strip()
+    if not t: return latest.get("report_timestamp") or "—"
+    u=t.upper()
+    return (t[:-2].rstrip()+" "+u[-2:]) if (u.endswith("AM") or u.endswith("PM")) else t
+
 # ---------- cumulative + pace/estimate for a count metric ----------
 def _cum_series(today_rows,hours,now_hour,key):
     cum=cum_by_hour(today_rows,key)
@@ -218,7 +228,7 @@ def build_store(store, city, region, today_rows, hist, now):
             "net":st_pace(net["pace_pct"]),"big4":st_big45(big4["sofar"]),"lhpc":st_lhpc(lhpc["day"])}
     return {"id":store,"name":city,"region":region,"hours":[hour_label(h) for h in hours],
             "now":hour_label(now_hour),"date":f"{DOW_FULL[weekday]}, {now:%b %-d %Y}",
-            "asof":now.strftime("%-I:%M %p"),"open":latest.get("report_timestamp") or "—",
+            "asof":now.strftime("%-I:%M %p"),"open":open_time(latest),
             "cars":cars,"net":net,"aro":aro,"big4":big4,"lhpc":lhpc,"diff":diff,"ops":ops,"status":status}
 
 def build_admin_row(store, city, today_rows, hist, now):
@@ -239,7 +249,7 @@ def build_admin_row(store, city, today_rows, hist, now):
         rt=latest.get("report_timestamp") or ""
         lat=rt
     except Exception: pass
-    return {"id":store,"name":city,"open":latest.get("report_timestamp") or "—",
+    return {"id":store,"name":city,"open":open_time(latest),
             "cars":cars,"net":round(net),"aro":round(net/cars,2) if cars else None,
             "lhpc":lh["day"],"b45":round((ba["pct"] or 0)+dpct,1),"diff":dd["units"],
             "pace":cm["pace_pct"],"heat":[round(v,1) if v is not None else None for v in heat],
