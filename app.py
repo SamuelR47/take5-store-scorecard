@@ -110,6 +110,19 @@ def _pace(v):
     return "—" if v is None else (("+" if v >= 0 else "") + f"{v:g}%")
 
 
+# st.fragment (stable) with older-version fallback. A fragment can re-run on a
+# timer WITHOUT reloading the page, so auto-refresh keeps the session (login).
+_fragment = getattr(st, "fragment", None) or getattr(st, "experimental_fragment")
+
+
+@_fragment(run_every=1800)   # 1800s = every 30 min (once each half-hour), in-session — no reload, no logout
+def _dashboard_view(tier, allowed, scope):
+    now = dt.datetime.now(CENTRAL)
+    stamp = now.strftime("%Y-%m-%d-%H-%M")   # per-minute key so an auto/manual refresh always re-pulls
+    payload = build_payload(tier, allowed, scope, stamp)
+    components.html(dashboard.html(payload), height=2600, scrolling=True)
+
+
 def main():
     if "auth" not in st.session_state:
         login_view(); return
@@ -121,17 +134,17 @@ def main():
     else:
         tier, allowed, scope = "admin", STORE_CODES, "All Stores · 15"
 
-    now = dt.datetime.now(CENTRAL)
-    stamp = now.strftime("%Y-%m-%d-%H")
-    payload = build_payload(tier, allowed, scope, stamp)
-
-    # ---- Log out (top-right); score card now lives inside the dashboard ----
-    _, cr = st.columns([9, 1])
-    with cr:
+    # ---- top controls: Refresh + Log out. Both re-run INSIDE the session
+    # (not a browser reload), so data updates without logging you out. ----
+    _, cref, clo = st.columns([8, 1, 1])
+    with cref:
+        if st.button("↻ Refresh", use_container_width=True):
+            st.cache_data.clear(); st.rerun()
+    with clo:
         if st.button("Log out", use_container_width=True):
             del st.session_state.auth; st.cache_data.clear(); st.rerun()
 
-    components.html(dashboard.html(payload), height=2600, scrolling=True)
+    _dashboard_view(tier, allowed, scope)
 
 
 if __name__ == "__main__":
