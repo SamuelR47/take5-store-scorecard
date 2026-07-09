@@ -75,6 +75,8 @@ CSS = """
  .hhdr{font-size:.6rem;font-weight:700;color:var(--mute);text-align:center;padding:2px 0;line-height:1.15}
  .hrl{font-size:.63rem;color:var(--mute);text-align:right;padding-right:5px;font-weight:600;display:flex;align-items:center;justify-content:flex-end}
  .foot{font-size:.72rem;color:var(--mute);line-height:1.5}.foot b{color:var(--ink)}
+ .scbtn{display:inline-block;background:var(--navy);color:#fff!important;text-decoration:none;border-radius:7px;padding:10px 16px;font-weight:700;font-size:.82rem;box-shadow:var(--sh)}
+ .scsel{border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:.82rem;font-weight:600;color:var(--ink);background:#fff}
 </style>
 """
 
@@ -127,12 +129,11 @@ function renderStore(sp){
     ['LHPC',fmt(sp.lhpc.day,2),'target 1.10',sp.status.lhpc]];
   const kbar='<div class="kbar">'+km.map(m=>`<div class="kc ${m[3]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]}</div></div>`).join('')+'</div>';
   const drv=(t,st,m,s)=>`<div class="drv ${st}"><div class="t">${t}</div><div class="m ${scls(st)}">${m}</div><div class="s">${s}</div></div>`;
-  const row2='<div class="row2"><div class="card"><h3 class="sh">What\'s driving value</h3><div class="drivers">'
+  const row2='<div class="row2" style="grid-template-columns:1.6fr 1fr"><div class="card"><h3 class="sh">What\'s driving value</h3><div class="drivers">'
     +drv('Traffic',sp.status.cars,pc(sp.cars.pace_pct)+' pace',fmt(sp.cars.sofar,0)+' cars · est. ~'+fmt(sp.cars.est_close,0))
     +drv('Average ticket',sp.status.aro,pc(sp.aro.gap_pct)+' vs target','$'+fmt(sp.aro.sofar,0)+' vs $125')
     +drv('Big 4 attachment',sp.status.big4,fmt(sp.big4.sofar,0)+'% of cars','target '+sp.big4.target+'%')
-    +'</div></div><div class="card"><h3 class="sh">What is pace?</h3><div class="pacebox"><b>Pace</b> = today so far vs a <b>normal day</b> by now (simple avg of the last 4 same-weekdays). <b>+%</b> ahead, <b>−%</b> behind.</div></div>'
-    +'<div class="card snap"><div><h3 class="sh">Snapshot</h3><div class="big">Score card (PDF)</div><div class="s" style="font-size:.7rem;color:var(--mute);margin-top:2px">Download above the dashboard</div></div></div></div>';
+    +'</div></div><div class="card"><h3 class="sh">What is pace?</h3><div class="pacebox"><b>Pace</b> = today so far vs a <b>normal day</b> by now (simple avg of the last 4 same-weekdays). <b>+%</b> ahead, <b>−%</b> behind.</div></div></div>';
   const secs=[
     {k:'cars',t:'Cars',n:'cumulative today vs estimated close',ac:C.blue,type:'cum',
      kp:[['So far',fmt(sp.cars.sofar,0),'',''],['Estimated',fmt(sp.cars.est_close,0),pc(sp.cars.pace_pct),sp.status.cars],['Pace',pc(sp.cars.pace_pct),'',sp.status.cars]]},
@@ -153,6 +154,7 @@ function renderStore(sp){
     else ch=`<div>${DB}<div style="position:relative;height:216px"><canvas id="c_${s.k}"></canvas></div></div>`;
     body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${s.ac}"></div><span class="st">${s.t}</span><span class="sn">${s.n}</span></div><div class="mrow"><div class="kbox">${kb}</div>${ch}</div></div>`;
   });
+  body+='<div class="card"><div class="sechead"><div class="accent" style="background:#14273F"></div><span class="st">Score card</span><span class="sn">one-page KPI PDF</span></div><a class="scbtn" download="scorecard_'+sp.id+'.pdf" href="data:application/pdf;base64,'+((P.pdf&&P.pdf[sp.id])||'')+'">\u2b07  Download score card (PDF)</a></div>';
   body+='<div class="card"><div class="sechead"><div class="accent" style="background:var(--mute)"></div><span class="st">Operational detail</span><span class="sn">the numbers behind the day</span></div><div class="ops">'
     +sp.ops.map(o=>`<div class="o"><div class="l">${o[0]}</div><div class="v">${o[1]}</div><div class="s">${o[2]}</div></div>`).join('')
     +'</div><div class="foot" style="margin-top:9px"><b>Pace</b> = vs the simple 4-week same-weekday average by this time. <b>Estimated close</b> = the recency-weighted 4-week average (40/30/20/10) scaled by pace (clamped 0.7–1.5×).</div></div>';
@@ -184,9 +186,10 @@ function renderAdmin(ids,label){
   const live=rows.filter(r=>r.cars!==null);
   const tc=live.reduce((a,r)=>a+r.cars,0),tn=live.reduce((a,r)=>a+r.net,0),aro=tc?tn/tc:0;
   const td=live.reduce((a,r)=>a+r.diff,0),ah=live.filter(r=>(r.pace||0)>=0).length;
+  const b45n=live.filter(r=>r.b45!==null&&r.cars);const b45avg=b45n.length?b45n.reduce((a,r)=>a+r.b45*r.cars,0)/b45n.reduce((a,r)=>a+r.cars,0):0;
   const avg=live.length?Math.round(live.reduce((a,r)=>a+(r.pace||0),0)/live.length):0;
   const km=[['Stores',ids.length,'reporting','flat'],['Total cars',fmt(tc,0),(avg>=0?'+':'')+avg+'% avg pace',avg>=0?'g':'r'],
-    ['Total net','$'+fmt(tn,0),'','flat'],['Avg ARO','$'+fmt(aro,0),aro>=125?'at goal':'below $125',aro>=125?'g':'r'],['Differentials',fmt(td,0),'units','flat']];
+    ['Total net','$'+fmt(tn,0),'','flat'],['Avg ARO','$'+fmt(aro,0),aro>=125?'at goal':'below $125',aro>=125?'g':'r'],['Big 4/5 %',Math.round(b45avg)+'%','target 53%',b45avg>=53?'g':(b45avg>=32?'a':'r')]];
   let body='<div class="kbar">'+km.map(m=>`<div class="kc ${m[3]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]||'&nbsp;'}</div></div>`).join('')+'</div>';
   body+='<div class="card"><h3 class="sh">What is pace?</h3><div class="pacebox"><b>Pace</b> = cars so far vs a <b>normal day</b> by this time (simple avg of the last 4 same-weekdays). <b>+%</b> ahead, <b>−%</b> behind. ARO goal is a flat $125.</div></div>';
   // ranking
@@ -213,6 +216,7 @@ function renderAdmin(ids,label){
   // big 4/5 attachment
   body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.teal}"></div><span class="st">Big 4/5 attachment</span><span class="sn">overall attach % of cars by store · incl. differentials</span></div>
     <div style="position:relative;height:${Math.max(220,rk.length*26+50)}px"><canvas id="b45"></canvas></div></div>`;
+  body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.navy}"></div><span class="st">Score card</span><span class="sn">download a store's one-page PDF</span></div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><select id="scsel" class="scsel">${ids.map(i=>`<option value="${i}">${P.stores[i].name} (${i})</option>`).join('')}</select><a id="scdl" class="scbtn" download href="#">\u2b07 Download score card (PDF)</a></div></div>`;
   body+='<div class="foot card"><b>Pace</b> = cars so far vs the simple 4-week same-weekday average by this time (+/-%). Click any store to open its full scorecard.</div>';
   document.getElementById('view').innerHTML=body;
   const bs=[...rows].filter(r=>r.b45!==null).sort((a,b)=>a.b45-b.b45);
@@ -220,6 +224,7 @@ function renderAdmin(ids,label){
     datasets:[{data:bs.map(r=>r.b45),backgroundColor:C.teal,borderRadius:5,barPercentage:.72}]},
     options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false},tooltip:{backgroundColor:C.navy,padding:8,cornerRadius:6,callbacks:{label:c=>c.parsed.x+'% of cars'}}},
      scales:{x:{grid:{color:C.line},border:{display:false},ticks:{color:C.mute,callback:v=>v+'%'}},y:{grid:{display:false},border:{display:false},ticks:{color:C.navy,font:{size:11,weight:600}}}}}}));
+  var sc=document.getElementById('scsel');if(sc){var upd=function(){var v=sc.value,a=document.getElementById('scdl');a.href='data:application/pdf;base64,'+((P.pdf&&P.pdf[v])||'');a.download='scorecard_'+v+'.pdf';};sc.onchange=upd;upd();}
 }
 
 function fmt(v,dp){if(v===null||v===undefined)return '—';return Number(v).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});}

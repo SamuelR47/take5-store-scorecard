@@ -1,7 +1,7 @@
 """VantEdge Auto - Take 5 Scorecard V2. Streamlit shell: auth + Supabase data +
 per-tier payload -> one embedded HTML/Chart.js dashboard. Three tiers:
 store (own store), DM/AM (their region's stores), admin (all 15)."""
-import datetime as dt
+import base64, datetime as dt
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -14,8 +14,10 @@ st.set_page_config(page_title=f"{BRAND} - Take 5 Scorecard", layout="wide",
                    initial_sidebar_state="collapsed")
 st.markdown("""<style>
  .block-container{padding:1rem 1rem 0;max-width:100%;}
- #MainMenu,footer{visibility:hidden;} [data-testid="stHeader"]{background:rgba(0,0,0,0)!important;}
- [data-testid="stSidebarCollapsedControl"]{visibility:visible!important;}
+ #MainMenu,footer{visibility:hidden;}
+ header[data-testid="stHeader"]{display:none!important;}
+ [data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stStatusWidget"],
+ .stDeployButton,[data-testid="stAppDeployButton"]{display:none!important;}
 </style>""", unsafe_allow_html=True)
 
 RGB = {"g": GREEN, "r": RED, "a": AMBER, "flat": NAVY}
@@ -63,10 +65,15 @@ def build_payload(tier, allowed, scope_label, stamp):
         td = fetch_today(s); hist = fetch_history(s)
         stores[s] = calc.build_store(s, CITY[s], region_of(s), td, hist, now)
         rows[s] = calc.build_admin_row(s, CITY[s], td, hist, now)
+    pdf = {}
+    for s in allowed:
+        sp = stores[s]
+        pdf[s] = base64.b64encode(scorecard_pdf.build_scorecard_pdf(
+            sp["name"], s, sp["date"], sp["asof"], score_card_cards(sp))).decode()
     return {"tier": tier, "scope_label": scope_label, "allowed": allowed,
             "regions": REGIONS if tier == "admin" else {}, "stores": stores, "rows": rows,
             "hours": hours, "date": stores[allowed[0]]["date"] if allowed else "",
-            "asof": now.strftime("%-I:%M %p")}
+            "asof": now.strftime("%-I:%M %p"), "pdf": pdf}
 
 
 def score_card_cards(sp):
@@ -102,17 +109,9 @@ def main():
     stamp = now.strftime("%Y-%m-%d-%H")
     payload = build_payload(tier, allowed, scope, stamp)
 
-    # ---- top control row ----
-    c1, c2, c3, c4 = st.columns([5, 2.4, 1.1, 1.1])
-    with c2:
-        sel = allowed[0] if tier == "store" else st.selectbox(
-            "Score card", allowed, format_func=lambda s: f"{CITY[s]} ({s})", label_visibility="collapsed")
-    with c3:
-        sp = payload["stores"][sel]
-        pdf = scorecard_pdf.build_scorecard_pdf(sp["name"], sel, sp["date"], sp["asof"], score_card_cards(sp))
-        st.download_button("⬇ Score card", pdf, file_name=f"scorecard_{sel}_{now:%Y-%m-%d}.pdf",
-                           mime="application/pdf", use_container_width=True)
-    with c4:
+    # ---- Log out (top-right); score card now lives inside the dashboard ----
+    _, cr = st.columns([9, 1])
+    with cr:
         if st.button("Log out", use_container_width=True):
             del st.session_state.auth; st.cache_data.clear(); st.rerun()
 
