@@ -14,6 +14,9 @@ def fetch_today(store):
     except Exception: return []
 
 def fetch_history(store,days=HIST_DAYS):
+    # history is only used for the cars + net-sales norms, so fetch just those
+    # columns (skip the heavy line_items/big4/data JSON) for a much smaller payload
     since=(dt.datetime.now(CENTRAL)-dt.timedelta(days=days)).strftime("%Y-%m-%d")
-    try: return _get(f"daily_sales_pull?store_number=eq.{store}&pull_time=gte.{since}&order=pull_time.asc")
+    cols="pull_hour,pull_time,cars,net_sales"
+    try: return _get(f"daily_sales_pull?store_number=eq.{store}&pull_time=gte.{since}&select={cols}&order=pull_time.asc")
     except Exception: return []

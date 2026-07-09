@@ -2,6 +2,7 @@
 per-tier payload -> one embedded HTML/Chart.js dashboard. Three tiers:
 store (own store), DM/AM (their region's stores), admin (all 15)."""
 import base64, datetime as dt
+from concurrent.futures import ThreadPoolExecutor
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -60,9 +61,12 @@ def build_payload(tier, allowed, scope_label, stamp):
     now = dt.datetime.now(CENTRAL)
     o, c = HOURS[now.weekday()]
     hours = [calc.hour_label(h) for h in range(o, c + 1)]
+    def _pull(s):
+        return s, fetch_today(s), fetch_history(s)
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        fetched = list(ex.map(_pull, allowed))
     stores, rows = {}, {}
-    for s in allowed:
-        td = fetch_today(s); hist = fetch_history(s)
+    for s, td, hist in fetched:
         stores[s] = calc.build_store(s, CITY[s], region_of(s), td, hist, now)
         rows[s] = calc.build_admin_row(s, CITY[s], td, hist, now)
     pdf = {}
