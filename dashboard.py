@@ -25,6 +25,8 @@ CSS = """
  .tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
  .tab.reg{color:var(--teal)}.tab.on.reg{background:var(--teal);border-color:var(--teal);color:#fff}
  .tab.st{color:var(--label);font-weight:600}.tsep{flex:0 0 auto;width:1px;background:var(--line);margin:3px 3px}
+ .tab.on.st{background:var(--navy);color:#fff;border-color:var(--navy)}
+ .tabs.sub{margin-top:-2px;padding:2px 2px 8px 8px;border-left:2px solid var(--line);border-radius:0}
  h3.sh{margin:0 0 8px;font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--label);font-weight:700}
  .kbar{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px}
  .kc{border-radius:7px;padding:10px 12px;box-shadow:var(--hair);border:1.5px solid var(--steel);background:var(--card)}
@@ -87,6 +89,7 @@ SKELETON = """
     <div class="r"><b id="scope"></b><br><span id="datel"></span> · <span class="liv" id="asof"></span></div>
   </div>
   <div class="tabs" id="tabs"></div>
+  <div class="tabs sub" id="subtabs" style="display:none"></div>
   <div id="view"></div>
 </div>
 """
@@ -234,22 +237,43 @@ function renderAdmin(ids,label){
 function fmt(v,dp){if(v===null||v===undefined)return '—';return Number(v).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});}
 function pc(v){if(v===null||v===undefined)return '—';return (v>=0?'+':'')+v+'%';}
 
+// two-level nav: top row = All + regions; selecting a region reveals ITS stores
+// in the sub-row below. Store click opens the full store dashboard (renderStore).
+let curRegion=null;
+function setTop(k){document.querySelectorAll('#tabs .tab').forEach(t=>t.classList.toggle('on',t.dataset.k===k));}
+function regionOf(id){return Object.keys(P.regions).find(r=>P.regions[r].includes(id));}
+function buildSub(ids,active){
+  const st=document.getElementById('subtabs');
+  if(!ids||!ids.length){st.style.display='none';st.innerHTML='';return;}
+  st.style.display='flex';
+  st.innerHTML=ids.map(i=>`<div class="tab st${i===active?' on':''}" data-k="st:${i}">${P.stores[i].name} ${i}</div>`).join('');
+  st.querySelectorAll('.tab').forEach(tb=>tb.onclick=()=>go(tb.dataset.k));
+}
 function go(key){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.k===key));
-  if(key==='All') renderAdmin(P.allowed,P.scope_label);
-  else if(key.startsWith('reg:')){const r=key.slice(4);renderAdmin(P.regions[r].filter(i=>P.allowed.includes(i)),r);}
-  else {renderStore(P.stores[key.slice(3)]);}
+  if(key==='All'){
+    curRegion=null;setTop('All');
+    buildSub(P.tier==='district'?P.allowed:null,null);   // district: keep its stores nested under "All my stores"
+    renderAdmin(P.allowed,P.scope_label);
+  } else if(key.startsWith('reg:')){
+    const r=key.slice(4);curRegion=r;setTop(key);
+    const ids=P.regions[r].filter(i=>P.allowed.includes(i));
+    buildSub(ids,null);renderAdmin(ids,r);
+  } else {                                                // st:ID -> full store dashboard
+    const id=key.slice(3);
+    if(P.tier==='district'){setTop('All');buildSub(P.allowed,id);}
+    else{const r=curRegion||regionOf(id);curRegion=r;setTop(r?'reg:'+r:'All');
+      buildSub(r?P.regions[r].filter(i=>P.allowed.includes(i)):null,id);}
+    renderStore(P.stores[id]);
+  }
   window.scrollTo(0,0);
 }
 
 // init
-if(P.tier==='store'){document.getElementById('tabs').style.display='none';renderStore(P.stores[P.allowed[0]]);}
+if(P.tier==='store'){document.getElementById('tabs').style.display='none';document.getElementById('subtabs').style.display='none';renderStore(P.stores[P.allowed[0]]);}
 else {
-  const t=document.getElementById('tabs');let h='<div class="tab on" data-k="All">'+(P.tier==='district'?'All my stores':'All')+'</div><div class="tsep"></div>';
-  (P.tier==='admin'?Object.keys(P.regions):[]).forEach(r=>h+=`<div class="tab reg" data-k="reg:${r}">${r}</div>`);
-  if(P.tier==='admin')h+='<div class="tsep"></div>';
-  P.allowed.forEach(i=>h+=`<div class="tab st" data-k="st:${i}">${P.stores[i].name} ${i}</div>`);
+  const t=document.getElementById('tabs');let h='<div class="tab" data-k="All">'+(P.tier==='district'?'All my stores':'All')+'</div>';
+  if(P.tier==='admin'){h+='<div class="tsep"></div>';Object.keys(P.regions).forEach(r=>h+=`<div class="tab reg" data-k="reg:${r}">${r}</div>`);}
   t.innerHTML=h;t.querySelectorAll('.tab').forEach(tb=>tb.onclick=()=>go(tb.dataset.k));
-  renderAdmin(P.allowed,P.scope_label);
+  go('All');
 }
 """
