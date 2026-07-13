@@ -1,0 +1,44 @@
+name: Hourly AutoPoll pull
+
+on:
+  # Timing is driven by an EXTERNAL scheduler set to America/Chicago (Central), which
+  # triggers this workflow via workflow_dispatch. We intentionally do NOT use GitHub's
+  # own `schedule:` cron here — that runs in UTC and would be a second, redundant
+  # scheduler firing at the wrong Central times. Keep only workflow_dispatch so the
+  # external Central-time job (and manual "Run workflow") are the single source of timing.
+  # scraper.py still gates on Central open hours (is_open_now), so off-hours triggers no-op.
+  workflow_dispatch:
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: autopoll-pull        # never let two runs overlap
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          AUTOPOLL_USER: ${{ secrets.AUTOPOLL_USER }}
+          AUTOPOLL_PASS: ${{ secrets.AUTOPOLL_PASS }}
+          STORES: ${{ vars.STORES }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          OUTPUT_DIR: "Hourly Data Pull"
+        run: python scraper.py
+
+      - name: Upload raw + parsed captures (audit trail)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hourly-data-${{ github.run_id }}
+          path: "Hourly Data Pull/**"
+          if-no-files-found: ignore
+          retention-days: 14
