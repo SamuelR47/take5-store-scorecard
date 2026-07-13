@@ -38,15 +38,14 @@ PACE_CLAMP = (0.7,1.5)
 
 ARO_TARGET = 125.0
 LHPC_TARGET = 1.10
-# Big 4 per-item attach-% targets (units/cars per item). V3: the headline Big 4 number is
-# the AVERAGE of the four items' attach rates, not the sum. Averaging keeps it on a per-item
-# ~0-20% scale and stops one multi-item car (or a pair-sold item like wipers) from ballooning
-# the figure past 100%. Goal = average of the four item targets = 13.25%. Differentials are
-# never folded in. (Mathematically this is the old summed rate / 4 vs the old 53% / 4, so
-# pass/fail and grades are unchanged — only the display scale is saner.)
+# Big 4 per-item attach-% targets (units/cars per item). The headline Big 4 number is the
+# OVERALL attach %: total Big 4 units / cars, as a % of cars, summed across the four items.
+# It CAN exceed 100% when cars attach multiple Big 4 items. Goal = the four item targets
+# summed = 53%. Differentials are never folded in.
 BIG4_TARGETS = {"Air Filter":25,"Cabin Filter":10,"Wiper Blade":10,"Coolant Exchange":8}
-BIG4_GOAL = round(sum(BIG4_TARGETS.values())/len(BIG4_TARGETS), 2)   # 13.25 (avg item target)
-BIG4_AMBER = 8                                 # amber floor for the average attach %
+BIG4_GOAL = sum(BIG4_TARGETS.values())         # 53 — overall Big 4 attach % (total Big 4
+                                               # units / cars), summed; CAN exceed 100%.
+BIG4_AMBER = 32                                # amber floor for Big 4 attach % (~0.6x goal)
 DIFF_TARGET = 3
 
 # palette (also used by the PDF)

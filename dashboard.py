@@ -149,12 +149,11 @@ Chart.defaults.font.family='-apple-system,Segoe UI,Arial,sans-serif';Chart.defau
 let CH=[];
 function kill(){CH.forEach(c=>{try{c.destroy()}catch(e){}});CH=[];}
 function scls(s){return s==='g'?'up':s==='r'?'down':'flat';}
-function gradeCol(g){return (g==='A'||g==='B')?C.green:((g==='C'||g==='D')?C.amber:C.red);}
 const HELP={
  cars:'Cars serviced so far today. The comparison is vs the average of the last 4 same-weekdays by this same hour.',
  aro:'Average Repair Order = net sales / cars. Target is a flat $125 per car.',
  net:'Net sales so far today, compared with the same 4-week average by this hour.',
- big4:'Big 4 = the average of the four item attach rates (each item = its units / cars). Goal is 13%, the average of the four item targets (Air 25, Cabin 10, Wiper 10, Coolant 8). Averaging keeps one multi-item car from inflating the number.',
+ big4:'Big 4 attachment = total Big 4 units / cars, as a % of cars, vs a 53% goal (the four item targets summed: Air 25, Cabin 10, Wiper 10, Coolant 8). It can exceed 100% when cars attach multiple Big 4 items.',
  lhpc:'Labor Hours Per Car = labor hours / cars. Lower is leaner; 1.10 is the balance target.'};
 function nowLine(now){return {type:'line',scaleID:'x',value:now,borderColor:'#9AA6B6',borderWidth:1.5,borderDash:[4,3],
   label:{display:true,content:'NOW',position:'start',backgroundColor:C.navy,color:'#fff',font:{size:8,weight:700},padding:{x:4,y:2},borderRadius:3}};}
@@ -175,16 +174,15 @@ function scoreCardSection(sp){
   const t=[['Cars',fmt(sp.cars.sofar,0),'vs 4-wk '+pc(sp.cars.pace_pct),sp.status.cars],
     ['ARO','$'+fmt(sp.aro.sofar,0),'$125 target · '+pc(sp.aro.gap_pct),sp.status.aro],
     ['Net revenue','$'+fmt(sp.net.sofar,0),'vs 4-wk '+pc(sp.net.pace_pct),sp.status.net],
-    ['Big 4',fmt(sp.big4.pct,0)+'%','goal 13%',sp.status.big4],
+    ['Big 4',fmt(sp.big4.pct,0)+'%','goal 53%',sp.status.big4],
     ['LHPC',fmt(sp.lhpc.day,2),'target 1.10',sp.status.lhpc]];
   const tiles='<div class="kbar">'+t.map(m=>`<div class="kc ${m[3]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]}</div></div>`).join('')+'</div>';
   const dl=(lab,k,fn)=> P4[k]?`<a class="scbtn" download="${fn}" href="data:application/pdf;base64,${P4[k]}">⬇  ${lab}</a>`:`<span class="scbtn dis">${lab} · n/a</span>`;
   const btns='<div class="scrow">'+dl('Today','today','scorecard_'+sp.id+'_today.pdf')
     +dl('Yesterday'+(P4.ylabel||''),'yesterday','scorecard_'+sp.id+'_yesterday.pdf')
     +dl('Last 7 days','week','scorecard_'+sp.id+'_7day.pdf')+'</div>';
-  const badge=sp.grade?`<span style="margin-left:auto;background:${gradeCol(sp.grade)};color:#fff;font-weight:800;font-size:.82rem;padding:3px 11px;border-radius:6px" title="Today's grade so far: average of ARO, Big 4 and LHPC vs target">Grade ${sp.grade}</span>`:'';
-  return `<div class="card"><div class="sechead"><div class="accent" style="background:${C.navy}"></div><span class="st">Score card</span><span class="sn">today's KPIs vs targets · download a printable card</span>${badge}</div>`
-    +tiles+btns+`<div class="foot" style="margin-top:8px">Green/amber/red show each metric against its target (ARO $125, Big 4 13%, LHPC 1.10); Cars & Net show the 4-week comparison. <b>Grade</b> = average of ARO, Big 4 &amp; LHPC vs target (A = at/above, one letter per 10% below). <b>Yesterday</b> is the full prior day; <b>Last 7 days</b> is a color-coded matrix of every KPI by day.</div></div>`;
+  return `<div class="card"><div class="sechead"><div class="accent" style="background:${C.navy}"></div><span class="st">Score card</span><span class="sn">today's KPIs vs targets · download a printable card</span></div>`
+    +tiles+btns+`<div class="foot" style="margin-top:8px">Green/amber/red show each metric against its target (ARO $125, Big 4 53%, LHPC 1.10); Cars & Net show the 4-week comparison. <b>Yesterday</b> is the full prior day; <b>Last 7 days</b> is a color-coded matrix of every KPI by day.</div></div>`;
 }
 
 function renderStore(sp){
@@ -192,10 +190,12 @@ function renderStore(sp){
   document.getElementById('scope').textContent=sp.name+' · #'+sp.id;
   document.getElementById('datel').textContent=sp.date;
   document.getElementById('asof').textContent='● live · '+sp.asof;
-  const km=[['Cars',fmt(sp.cars.sofar,0),pc(sp.cars.pace_pct)+' vs 4-wk',sp.status.cars,'cars'],
+  const carsD=pc(sp.cars.pace_pct)+(sp.cars.norm!=null?' vs 4-wk avg '+fmt(sp.cars.norm,0):' vs 4-wk');
+  const netD=pc(sp.net.pace_pct)+(sp.net.norm!=null?' vs 4-wk avg $'+fmt(sp.net.norm,0):' vs 4-wk');
+  const km=[['Cars',fmt(sp.cars.sofar,0),carsD,sp.status.cars,'cars'],
     ['ARO ($/car)','$'+fmt(sp.aro.sofar,0),pc(sp.aro.gap_pct)+' vs $125',sp.status.aro,'aro'],
-    ['Net revenue','$'+fmt(sp.net.sofar,0),pc(sp.net.pace_pct)+' vs 4-wk',sp.status.net,'net'],
-    ['Big 4 avg attach',fmt(sp.big4.pct,0)+'%','goal 13%',sp.status.big4,'big4'],
+    ['Net revenue','$'+fmt(sp.net.sofar,0),netD,sp.status.net,'net'],
+    ['Big 4 attach %',fmt(sp.big4.pct,0)+'%','goal 53%',sp.status.big4,'big4'],
     ['LHPC (hrs/car)',fmt(sp.lhpc.day,2),'target 1.10',sp.status.lhpc,'lhpc']];
   const kbar='<div class="kbar">'+km.map(m=>`<div class="kc ${m[3]}" title="${HELP[m[4]]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]}</div></div>`).join('')+'</div>';
   const drv=sp.drivers.map(d=>`<div class="drv ${d.st}" title="${d.s}"><div class="t">${d.t}</div><div class="m ${scls(d.st)}">${d.m}</div><div class="s">${d.s}</div></div>`).join('');
@@ -212,10 +212,10 @@ function renderStore(sp){
      kp:[['So far','$'+fmt(sp.aro.sofar,2),'',sp.status.aro],['Target','$125','',''],['Gap',pc(sp.aro.gap_pct),'',sp.status.aro]]},
     {k:'net',t:'Net revenue',n:'cumulative today vs projected close',ac:C.green,type:'cum',
      kp:[['So far','$'+fmt(sp.net.sofar,0),'',sp.status.net],['Projected','$'+fmt(sp.net.est_close,0),'',sp.status.net],['vs 4-wk',pc(sp.net.pace_pct),'',sp.status.net]]},
-    {k:'big4',t:'Big 4 attachment',n:'average attach % across the 4 items vs the 13% goal',ac:C.teal,type:'big4',
-     kp:[['Avg attach',fmt(sp.big4.pct,0)+'%','of the 4',sp.status.big4],['Goal','13%','avg target',''],['Units',fmt(sp.big4.units,0),'today','']]},
+    {k:'big4',t:'Big 4 attachment',n:'attach % of cars over the day vs the 53% goal',ac:C.teal,type:'big4',
+     kp:[['Attach',fmt(sp.big4.pct,0)+'%','of cars',sp.status.big4],['Goal','53%','sum of 4',''],['Units',fmt(sp.big4.units,0),'today','']]},
     {k:'lhpc',t:'Labor efficiency · LHPC',n:'per-period hours behind rolling LHPC vs 1.10',ac:C.purple,type:'lhpc',
-     kp:[['Now',fmt(sp.lhpc.now,2),'hrs/car',sp.status.lhpc],['Target','1.10','',''],['Day',fmt(sp.lhpc.day,2),'',sp.status.lhpc]]}];
+     kp:[['Rolling',fmt(sp.lhpc.day,2),'',sp.status.lhpc],['Target','1.10','',''],['Current Hour',fmt(sp.lhpc.now,2),'hrs/car',sp.status.lhpc]]}];
   let body=kbar+row2;
   secs.forEach(s=>{
     const kb=s.kp.map(k=>`<div class="tile ${k[3]||''}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s ${scls(k[3])}">${k[2]||'&nbsp;'}</div></div>`).join('');
@@ -235,9 +235,9 @@ function renderStore(sp){
   CH.push(new Chart(c_cars,{type:'line',data:{labels:L,datasets:[ln('Actual',sp.cars.actual,C.blue,[],fB),ln('Projected',sp.cars.est,C.green,[6,4])]},options:opts(sp.now,null,{label:c=>c.dataset.label+': '+fmt(c.parsed.y,0)+' cars'})}));
   CH.push(new Chart(c_net,{type:'line',data:{labels:L,datasets:[ln('Actual',sp.net.actual,C.blue,[],fB),ln('Projected',sp.net.est,C.green,[6,4])]},options:opts(sp.now,null,{label:c=>c.dataset.label+': $'+fmt(c.parsed.y,0)})}));
   CH.push(new Chart(c_aro,{type:'line',data:{labels:L,datasets:[ln('ARO',sp.aro.run,C.blue,[],fB)]},options:opts(sp.now,{t:tline(125,C.amber,'$125')},{label:c=>'ARO: $'+fmt(c.parsed.y,2)})}));
-  CH.push(new Chart(c_big4,{type:'line',data:{labels:L,datasets:[ln('Big 4 avg attach %',sp.big4.run,C.teal,[],'rgba(14,116,144,.10)')]},
-    options:Object.assign(opts(sp.now,{t:tline(sp.big4.target,C.green,'goal '+Math.round(sp.big4.target)+'%')},{label:c=>'Big 4 avg attach: '+fmt(c.parsed.y,1)+'%'}),
-     {scales:{x:{grid:{display:false},border:{display:false},ticks:{color:C.mute,font:{size:10}}},y:{grid:{color:C.line},border:{display:false},beginAtZero:true,suggestedMax:Math.max(25,sp.big4.target*2),ticks:{color:C.mute,font:{size:10},callback:v=>v+'%'}}}})}));
+  CH.push(new Chart(c_big4,{type:'line',data:{labels:L,datasets:[ln('Big 4 attach %',sp.big4.run,C.teal,[],'rgba(14,116,144,.10)')]},
+    options:Object.assign(opts(sp.now,{t:tline(sp.big4.target,C.green,'goal '+sp.big4.target+'%')},{label:c=>'Big 4: '+fmt(c.parsed.y,0)+'% of cars'}),
+     {scales:{x:{grid:{display:false},border:{display:false},ticks:{color:C.mute,font:{size:10}}},y:{grid:{color:C.line},border:{display:false},beginAtZero:true,suggestedMax:Math.max(60,sp.big4.target+10),ticks:{color:C.mute,font:{size:10},callback:v=>v+'%'}}}})}));
   // per-item bullets vs each item's own target (old style); scale to fit, clamp 100
   const MX=Math.max(30,...sp.big4.items.flatMap(it=>[it.attach,it.target]))*1.15;
   const pos=v=>Math.min(100,v/MX*100);
@@ -267,9 +267,9 @@ function renderAdmin(ids,label){
     ['Total cars',fmt(tc,0),(avg>=0?'+':'')+avg+'% avg vs 4-wk',avg>=0?'g':'r','Total cars serviced across the scope, and the average 4-week comparison.'],
     ['Total net','$'+fmt(tn,0),'','flat','Total net sales across the scope so far today.'],
     ['Avg ARO','$'+fmt(aro,0),aro>=125?'at goal':'below $125',aro>=125?'g':'r','Cars-weighted average repair order vs the $125 target.'],
-    ['Big 4 avg attach',Math.round(b4avg)+'%','goal 13%',b4avg>=13.25?'g':(b4avg>=8?'a':'r'),'Cars-weighted average Big 4 attach % across the scope, vs the 13% goal.']];
+    ['Big 4 attach %',Math.round(b4avg)+'%','goal 53%',b4avg>=53?'g':(b4avg>=32?'a':'r'),'Cars-weighted Big 4 attach % across the scope, vs the 53% goal.']];
   let body='<div class="kbar">'+km.map(m=>`<div class="kc ${m[3]}" title="${m[4]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]||'&nbsp;'}</div></div>`).join('')+'</div>';
-  body+='<div class="card"><h3 class="sh">How to read this</h3><div class="pacebox"><b>4-Week Comparison</b> = cars so far vs a <b>normal day</b> by this time (simple average of the last 4 same-weekdays). <b>+%</b> ahead, <b>−%</b> behind. ARO goal is a flat $125. <b>Big 4</b> is the average attach % across the four items, vs a 13% goal.</div></div>';
+  body+='<div class="card"><h3 class="sh">How to read this</h3><div class="pacebox"><b>4-Week Comparison</b> = cars so far vs a <b>normal day</b> by this time (simple average of the last 4 same-weekdays). <b>+%</b> ahead, <b>−%</b> behind. ARO goal is a flat $125. <b>Big 4</b> is the attach % of cars, vs a 53% goal (can exceed 100%).</div></div>';
   const rk=[...rows].sort((a,b)=>(b.pace===null?-1e9:b.pace)-(a.pace===null?-1e9:a.pace));
   let tr='';
   rk.forEach((r,i)=>{const pc2=r.pace===null?'':(r.pace>=0?'+':'')+r.pace+'%';const col=r.pace===null?C.mute:(r.pace>=3?C.green:r.pace<=-3?C.red:C.amber);
@@ -290,18 +290,18 @@ function renderAdmin(ids,label){
   body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.blue}"></div><span class="st">Heat map</span><span class="sn">cars per hour · darker = busier · first/last rows roll up before-open & after-close</span></div>
     <div class="heat"><div class="hgrid" id="hg" style="grid-template-columns:78px repeat(${rk.length},minmax(40px,1fr))">${hg}</div></div>
     <div style="display:flex;align-items:center;gap:9px;margin-top:10px;font-size:.7rem;color:var(--mute)"><span>Fewer</span><span style="flex:0 0 140px;height:9px;border-radius:5px;background:linear-gradient(90deg,rgba(31,111,178,.10),rgba(31,111,178,.92))"></span><span>More</span><span style="margin-left:auto">One absolute scale across these stores.</span></div></div>`;
-  body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.teal}"></div><span class="st">Big 4 by store</span><span class="sn">average attach % across the 4 items · goal line 13%</span></div>
+  body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.teal}"></div><span class="st">Big 4 by store</span><span class="sn">attach % of cars · goal line 53%</span></div>
     <div style="position:relative;height:${Math.max(220,rk.length*26+50)}px"><canvas id="b4"></canvas></div></div>`;
   body+='<div class="foot card"><b>4-Week Comparison</b> = cars so far vs the simple 4-week same-weekday average by this time (+/−%). Click any store to open its full dashboard.</div>';
   body+=warnBlock();
   document.getElementById('view').innerHTML=body;
   const bs=[...rows].filter(r=>r.big4!==null).sort((a,b)=>a.big4-b.big4);
   CH.push(new Chart(document.getElementById('b4'),{type:'bar',data:{labels:bs.map(r=>r.name+' ('+r.id+')'),
-    datasets:[{data:bs.map(r=>r.big4),backgroundColor:bs.map(r=>r.big4>=13.25?C.green:(r.big4>=8?C.amber:C.red)),borderRadius:5,barPercentage:.72}]},
+    datasets:[{data:bs.map(r=>r.big4),backgroundColor:bs.map(r=>r.big4>=53?C.green:(r.big4>=32?C.amber:C.red)),borderRadius:5,barPercentage:.72}]},
     options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
-     plugins:{legend:{display:false},tooltip:{backgroundColor:C.navy,padding:9,cornerRadius:6,callbacks:{label:c=>c.parsed.x+'% avg attach'}},
-      annotation:{annotations:{g:{type:'line',scaleID:'x',value:13.25,borderColor:C.green,borderWidth:2,borderDash:[6,4],label:{display:true,content:'goal 13%',position:'end',backgroundColor:C.green,color:'#fff',font:{size:8,weight:700},padding:{x:4,y:2},borderRadius:3}}}}},
-     scales:{x:{grid:{color:C.line},border:{display:false},suggestedMax:30,ticks:{color:C.mute,callback:v=>v+'%'}},y:{grid:{display:false},border:{display:false},ticks:{color:C.navy,font:{size:11,weight:600}}}}}}));
+     plugins:{legend:{display:false},tooltip:{backgroundColor:C.navy,padding:9,cornerRadius:6,callbacks:{label:c=>c.parsed.x+'% of cars'}},
+      annotation:{annotations:{g:{type:'line',scaleID:'x',value:53,borderColor:C.green,borderWidth:2,borderDash:[6,4],label:{display:true,content:'goal 53%',position:'end',backgroundColor:C.green,color:'#fff',font:{size:8,weight:700},padding:{x:4,y:2},borderRadius:3}}}}},
+     scales:{x:{grid:{color:C.line},border:{display:false},suggestedMax:60,ticks:{color:C.mute,callback:v=>v+'%'}},y:{grid:{display:false},border:{display:false},ticks:{color:C.navy,font:{size:11,weight:600}}}}}}));
 }
 
 function fmt(v,dp){if(v===null||v===undefined)return '—';return Number(v).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});}
