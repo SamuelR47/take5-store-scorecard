@@ -38,15 +38,13 @@ PACE_CLAMP = (0.7,1.5)
 
 ARO_TARGET = 125.0
 LHPC_TARGET = 1.10
-# Big 4 per-item attach-% targets. V3: the headline is a "Big 4 Score" = the simple
-# average of each item's attainment (attach / target, capped at 100%), so hitting all
-# four targets = 100%. See calc.big4_score. BIG4_SCORE_TARGET is the goal line (100).
+# Big 4 per-item attach-% targets. V3: the Big 4 metric is the OVERALL attach %
+# (Big 4 units / cars), and the goal is the "old percentage" = the sum of the four
+# item targets (53%). Differentials are NOT folded in (that was the >100% bug).
 BIG4_TARGETS = {"Air Filter":25,"Cabin Filter":10,"Wiper Blade":10,"Coolant Exchange":8}
-BIG4_SCORE_TARGET = 100                       # a full-attainment Big 4 score
-BIG4_SCORE_GREEN = 90                          # >=90% of goal = green
-BIG4_SCORE_AMBER = 60                          # >=60% = amber, below = red
+BIG4_GOAL = sum(BIG4_TARGETS.values())         # 53 — overall Big 4 attach-% goal
+BIG4_AMBER = 32                                # amber floor for Big 4 attach % (~0.6x goal)
 DIFF_TARGET = 3
-ATTACH_SUM_TARGET = sum(BIG4_TARGETS.values()) # 53 (kept for reference/labels only)
 
 # palette (also used by the PDF)
 NAVY="#14273F"; RED="#D0342C"; BLUE="#2E6FB7"; GREEN="#158A5A"; AMBER="#B57611"

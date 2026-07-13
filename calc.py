@@ -1,8 +1,7 @@
 """V3 pure math: section-9 forecast + all payload builders. No Streamlit/network."""
 import datetime as dt, statistics
 from config import (HOURS, DOW, DOW_FULL, RECENCY_W, MAD_K, PACE_CLAMP, ARO_TARGET,
-                    LHPC_TARGET, BIG4_TARGETS, DIFF_TARGET, ATTACH_SUM_TARGET,
-                    BIG4_SCORE_TARGET, BIG4_SCORE_GREEN, BIG4_SCORE_AMBER)
+                    LHPC_TARGET, BIG4_TARGETS, DIFF_TARGET, BIG4_GOAL, BIG4_AMBER)
 
 # ---------- row parsing ----------
 def row_date(r):
@@ -105,9 +104,9 @@ def st_pace(pct):        # +/- % vs pace
 def st_aro(v):
     if v is None: return "flat"
     return "g" if v>=ARO_TARGET else ("a" if v>=ARO_TARGET*0.94 else "r")
-def st_big4_score(score):   # score = Big 4 % of goal achieved (0-100+)
-    if score is None: return "flat"
-    return "g" if score>=BIG4_SCORE_GREEN else ("a" if score>=BIG4_SCORE_AMBER else "r")
+def st_big4(pct):   # pct = overall Big 4 attach % (units/cars)
+    if pct is None: return "flat"
+    return "g" if pct>=BIG4_GOAL else ("a" if pct>=BIG4_AMBER else "r")
 def st_lhpc(v):
     if v is None: return "flat"
     return "g" if v<=LHPC_TARGET else ("a" if v<=1.25 else "r")
@@ -126,18 +125,6 @@ def big4_attach(latest):
     order=["Air Filter","Cabin Filter","Wiper Blade","Coolant Exchange"]
     br={n:((b.get(n) or {}).get("attach_pct") or 0) for n in order}
     return {"pct":(units/cars*100) if cars else None,"units":units,"breakdown":br}
-
-def item_attain(attach,target):
-    """One item's attainment: attach % as a share of its target %, capped at 100."""
-    return min((attach/target) if target else 0.0,1.0)*100
-
-def big4_score(breakdown):
-    """Big 4 Score = simple average of the four items' attainment (each attach/target,
-    capped at 100%), so hitting every target = 100%. This is the V3 headline Big 4
-    number, and it can never exceed 100. None when there is no data yet."""
-    if not breakdown: return None
-    vals=[item_attain(breakdown[n],BIG4_TARGETS[n]) for n in BIG4_TARGETS if n in breakdown]
-    return round(statistics.fmean(vals),1) if vals else None
 
 def open_time(latest):
     """Real store open time = 'TIME OPENED' from the report body, captured by the
@@ -188,25 +175,18 @@ def aro_series(today_rows,hours,now_hour):
             "gap_pct":round((sofar/ARO_TARGET-1)*100,1) if sofar else None}
 
 def big4_series(today_rows,hours,now_hour,latest):
-    """V3: the line is the Big 4 Score (% of goal) hour by hour, targeting 100%.
-    Each hourly row carries the cumulative attach_pct per item, so we score each
-    row and carry the last known value forward across gaps."""
-    by_hour={}
-    for r in today_rows:
-        h=row_hour(r)
-        if h is None: continue
-        b=r.get("big4") or {}
-        br={n:((b.get(n) or {}).get("attach_pct") or 0) for n in BIG4_TARGETS}
-        by_hour[h]=big4_score(br)
-    run=[]; last=None
+    """V3: the line is the OVERALL Big 4 attach % (units/cars) hour by hour, measured
+    against the 53% goal (the summed item targets). No differentials in the number."""
+    bcum=cum_by_hour(today_rows,"big4_total_units"); ccum=cum_by_hour(today_rows,"cars")
+    run=[]; lb=0.0; lc=0.0
     for h in hours:
-        if h in by_hour and by_hour[h] is not None: last=by_hour[h]
-        run.append(last if (last is not None and h<=now_hour) else None)
-    ba=big4_attach(latest); score=big4_score(ba["breakdown"])
-    items=[{"name":n,"attach":round(ba["breakdown"][n],1),"target":BIG4_TARGETS[n],
-            "attain":round(item_attain(ba["breakdown"][n],BIG4_TARGETS[n]),1)} for n in BIG4_TARGETS]
-    return {"run":run,"score":score,"attach_pct":round(ba["pct"],1) if ba["pct"] is not None else None,
-            "target":BIG4_SCORE_TARGET,"units":ba["units"],"items":items}
+        if h in bcum: lb=bcum[h]
+        if h in ccum: lc=ccum[h]
+        run.append(round(lb/lc*100,1) if (lc and h<=now_hour) else None)
+    ba=big4_attach(latest)
+    items=[{"name":n,"attach":round(ba["breakdown"][n],1),"target":BIG4_TARGETS[n]} for n in BIG4_TARGETS]
+    return {"run":run,"pct":round(ba["pct"],1) if ba["pct"] is not None else None,
+            "target":BIG4_GOAL,"units":ba["units"],"items":items}
 
 def lhpc_series(today_rows,hours,now_hour):
     lcum=cum_by_hour(today_rows,"labor_hours"); ccum=cum_by_hour(today_rows,"cars")
@@ -245,13 +225,13 @@ def build_drivers(weekday, cars, aro, net, big4, lhpc):
              "Average ticket just under the $125 target" if av>=ARO_TARGET*0.94 else
              "Average ticket below $125, capping revenue per car")
         out.append(("Average ticket",st_aro(av),"$%.0f vs $125"%av,msg+".",abs(g) if g is not None else 0))
-    sc=big4["score"]
+    sc=big4["pct"]
     if sc is None: out.append(("Big 4","flat","—","No Big 4 attachment recorded yet.",0))
     else:
-        msg=("Big 4 attachment at or near goal" if sc>=BIG4_SCORE_GREEN else
-             "Big 4 attachment partway to goal" if sc>=BIG4_SCORE_AMBER else
-             "Big 4 attachment well below goal - attach room on most cars")
-        out.append(("Big 4",st_big4_score(sc),"%.0f%% of goal"%sc,msg+".",100-sc))
+        msg=("Big 4 attachment at or above the 53% goal" if sc>=BIG4_GOAL else
+             "Big 4 attachment near the 53% goal" if sc>=BIG4_AMBER else
+             "Big 4 attachment below the 53% goal - attach room on most cars")
+        out.append(("Big 4",st_big4(sc),"%.0f%% attach"%sc,msg+".",abs(sc-BIG4_GOAL)))
     d=lhpc["day"]
     if d is None: out.append(("Labor","flat","—","No labor hours logged yet today.",0))
     else:
@@ -286,7 +266,7 @@ def build_store(store, city, region, today_rows, hist, now):
          ["Gross sales",f"${latest.get('gross_sales') or 0:,.0f}","before discounts"],
          ["Labor hours",f"{lab.get('hours') or 0:,.1f}","clocked today"]]
     status={"cars":st_pace(cars["pace_pct"]),"aro":st_aro(aro["sofar"]),
-            "net":st_pace(net["pace_pct"]),"big4":st_big4_score(big4["score"]),"lhpc":st_lhpc(lhpc["day"])}
+            "net":st_pace(net["pace_pct"]),"big4":st_big4(big4["pct"]),"lhpc":st_lhpc(lhpc["day"])}
     drivers=build_drivers(weekday,cars,aro,net,big4,lhpc)
     return {"id":store,"name":city,"region":region,"hours":[hour_label(h) for h in hours],
             "now":hour_label(now_hour),"date":f"{DOW_FULL[weekday]}, {now:%b %-d %Y}",
@@ -302,7 +282,7 @@ def build_admin_row(store, city, today_rows, hist, now):
     latest=today_rows[-1]; td=row_date(latest)
     cm=count_metric(today_rows,hist,hours,weekday,now_hour,"cars",td)
     cars=latest.get("cars") or 0; net=latest.get("net_sales") or 0
-    ba=big4_attach(latest); score=big4_score(ba["breakdown"]); dd=differentials(latest.get("line_items"))
+    ba=big4_attach(latest); dd=differentials(latest.get("line_items"))
     dpct=round(dd["units"]/cars*100,1) if cars else None
     lh=lhpc_series(today_rows,hours,now_hour)
     cpp=to_per_period(cum_by_hour(today_rows,"cars"))
@@ -310,12 +290,13 @@ def build_admin_row(store, city, today_rows, hist, now):
     # close hour is summed into its own bucket so early/late cars aren't hidden.
     before=sum(v for h,v in cpp.items() if h<o); after=sum(v for h,v in cpp.items() if h>c)
     heat=[before if before else None]+[cpp.get(h) for h in hours]+[after if after else None]
-    # V3 (fixes review M1): admin "Big 4" is the same Big 4 Score (% of goal) as the
-    # store view -- differentials are NO LONGER folded into the numerator, so it can
-    # never exceed 100%. Differentials are reported separately (units + % of cars).
+    # V3 (fixes review M1): admin "Big 4" is the overall attach % (units/cars), same as
+    # the store view, vs the 53% goal -- differentials are NO LONGER folded into the
+    # numerator (that was the >100% bug). Differentials reported separately.
     return {"id":store,"name":city,"open":open_time(latest),
             "cars":cars,"net":round(net),"aro":round(net/cars,2) if cars else None,
-            "lhpc":lh["day"],"big4":score,"diff":dd["units"],"diff_pct":dpct,
+            "lhpc":lh["day"],"big4":round(ba["pct"],1) if ba["pct"] is not None else None,
+            "diff":dd["units"],"diff_pct":dpct,
             "pace":cm["pace_pct"],"heat":[round(v,1) if v is not None else None for v in heat],
             "breakdown":{n:round(ba["breakdown"][n],1) for n in ba["breakdown"]}}
 
@@ -330,7 +311,7 @@ def day_summary(day_rows):
     dd=differentials(latest.get("line_items"))
     return {"date":row_date(latest),"cars":cars,"net":round(net),
             "aro":round(net/cars,2) if cars else None,
-            "big4":big4_score(ba["breakdown"]),
+            "big4":round(ba["pct"],1) if ba["pct"] is not None else None,
             "lhpc":round(lh/cars,2) if (lh and cars) else None,
             "diff":dd["units"],"diff_pct":round(dd["units"]/cars*100,1) if cars else None}
 

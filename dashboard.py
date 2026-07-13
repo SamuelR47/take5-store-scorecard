@@ -1,18 +1,16 @@
 """V3 dashboard component: dense HTML/Chart.js app driven by an injected JSON payload.
-One template renders the store view + admin/regional view + client-side roller & drill-in.
-Returned as a string for st.components.v1.html.
+Store view + admin/regional view + client-side roller & drill-in. Returned as a string
+for st.components.v1.html.
 
-V3 changes vs V2:
-- "Big 4/5" -> "Big 4" everywhere; the Big 4 chart is now % of goal (0-100, target 100).
-- "Pace" -> "Last 4-Week Comparison"; "Estimated" -> "Projected", each with its own plain
-  explainer.
-- Clearer KPI titles; LHPC chart gets a day-band + hour ticks and a y-axis capped at 5.
-- Heat map gains explicit "Before open" / "After close" roll-up buckets.
-- "What's driving value" is dynamic (server-computed biggest movers).
-- Richer hover tooltips on every chart; hover help on every KPI tile (title attr).
-- Score-card PDFs are no longer embedded here (moved to the app shell -> smaller payload).
-- Empty-state guard so a store login can never render blank.
-- Optional mobile layout (single-column) via mobile=True.
+V3 notes:
+- Big 4 = OVERALL attach % (units/cars) vs the 53% goal (summed item targets). No
+  differentials in the number (that was the >100% bug).
+- "Pace" -> "4-Week Comparison"; "Estimated" -> "Projected", each with a plain explainer.
+- LHPC chart: day-band + hour ticks, y capped at 5. Heat map: Before open / After close
+  roll-up buckets. Dynamic "biggest movers" drivers. Hover on every chart + KPI.
+- Score card is a first-class SECTION in the store view (KPI tiles vs targets + Today /
+  Yesterday / Last-7-days downloads embedded from the payload).
+- Empty-state guard. Mobile layout (single/·two-column, compact) via mobile=True.
 """
 import json
 
@@ -56,7 +54,7 @@ CSS = """
  .expl2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
  .pacebox{font-size:.73rem;color:var(--mute);line-height:1.45}.pacebox b{color:var(--ink)}
  .pacebox .h{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--label);font-weight:700;margin-bottom:3px}
- .sechead{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+ .sechead{display:flex;align-items:center;gap:9px;margin-bottom:10px;flex-wrap:wrap}
  .accent{width:4px;height:20px;border-radius:2px}.st{font-size:1rem;font-weight:800;color:var(--navy)}.sn{font-size:.74rem;color:var(--mute)}
  .mrow{display:grid;grid-template-columns:186px 1fr;gap:14px;align-items:start}
  .kbox{display:flex;flex-direction:column;gap:7px}
@@ -77,12 +75,16 @@ CSS = """
  .ops .o{border-radius:6px;padding:9px 11px;box-shadow:var(--hair);background:var(--soft)}
  .ops .o .l{font-size:.61rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:700}
  .ops .o .v{font-size:1.16rem;font-weight:800;margin-top:1px}.ops .o .s{font-size:.67rem;color:var(--mute)}
+ .scrow{display:flex;gap:9px;flex-wrap:wrap;margin-top:4px}
+ .scbtn{display:inline-block;background:var(--navy);color:#fff!important;text-decoration:none;border-radius:7px;padding:11px 16px;font-weight:700;font-size:.82rem;box-shadow:var(--sh)}
+ .scbtn.dis{background:#E7ECF2;color:var(--mute)!important;pointer-events:none}
  .expl{font-size:.71rem;color:var(--mute);line-height:1.5;margin-top:9px;background:var(--soft);border-radius:6px;padding:8px 11px;box-shadow:var(--hair)}
  .expl b{color:var(--ink)}
+ .tscroll{overflow-x:auto}
  table{width:100%;border-collapse:collapse}
- thead th{background:var(--navy);color:#fff;font-size:.63rem;text-transform:uppercase;letter-spacing:.04em;padding:8px 9px;text-align:right;font-weight:700}
+ thead th{background:var(--navy);color:#fff;font-size:.63rem;text-transform:uppercase;letter-spacing:.04em;padding:8px 9px;text-align:right;font-weight:700;white-space:nowrap}
  thead th:nth-child(-n+3){text-align:left}
- tbody td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);font-size:.8rem}
+ tbody td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);font-size:.8rem;white-space:nowrap}
  tbody td:nth-child(-n+3){text-align:left}
  tbody tr{cursor:pointer}tbody tr:hover{background:var(--soft)}
  .sid{color:var(--label);font-weight:500}.pace{font-weight:800}
@@ -99,16 +101,23 @@ CSS = """
 
 MOBILE_CSS = """
 <style>
- .wrap{max-width:100%;padding:8px 8px 26px}
+ .wrap{max-width:100%;padding:8px 9px 24px}
  .kbar{grid-template-columns:1fr 1fr;gap:7px}
+ .kc .v{font-size:1.3rem}
  .row2{grid-template-columns:1fr}
  .drivers{grid-template-columns:1fr}
  .expl2{grid-template-columns:1fr}
  .mrow{grid-template-columns:1fr;gap:9px}
  .ops{grid-template-columns:1fr 1fr}
- .head{flex-direction:column;align-items:flex-start;gap:6px}
- .head .r{text-align:left}
  .big4grid{grid-template-columns:1fr !important}
+ .head{flex-direction:column;align-items:flex-start;gap:6px}
+ .head .name{font-size:1.02rem}
+ .head .r{text-align:left}
+ .card{padding:11px 11px}
+ table{font-size:.72rem}
+ thead th,tbody td{padding:6px 7px}
+ .scbtn{flex:1 1 100%;text-align:center}
+ .bullet{grid-template-columns:88px 1fr 84px}
 </style>
 """
 
@@ -125,8 +134,7 @@ SKELETON = """
 """
 
 def html(payload, mobile=False):
-    # Escape "</" so a scraped value containing </script> can't break out of the
-    # inline <script> (review M2).
+    # Escape "</" so a scraped value containing </script> can't break out (review M2).
     data = json.dumps(payload).replace("</", "<\\/")
     css = CSS + (MOBILE_CSS if mobile else "")
     return css + SKELETON + (
@@ -145,7 +153,7 @@ const HELP={
  cars:'Cars serviced so far today. The comparison is vs the average of the last 4 same-weekdays by this same hour.',
  aro:'Average Repair Order = net sales / cars. Target is a flat $125 per car.',
  net:'Net sales so far today, compared with the same 4-week average by this hour.',
- big4:'Big 4 Score = the four attachment items (Air Filter, Cabin Filter, Wiper, Coolant) each measured against its target, then averaged. 100% = every target met.',
+ big4:'Big 4 attachment = Big 4 units / cars, as a % of cars. Goal is 53% (the four item targets summed: Air 25, Cabin 10, Wiper 10, Coolant 8).',
  lhpc:'Labor Hours Per Car = labor hours / cars. Lower is leaner; 1.10 is the balance target.'};
 function nowLine(now){return {type:'line',scaleID:'x',value:now,borderColor:'#9AA6B6',borderWidth:1.5,borderDash:[4,3],
   label:{display:true,content:'NOW',position:'start',backgroundColor:C.navy,color:'#fff',font:{size:8,weight:700},padding:{x:4,y:2},borderRadius:3}};}
@@ -161,6 +169,22 @@ const IC=['#2E6FB7','#0E7490','#6C4FB6','#B57611'];
 
 function warnBlock(){return '<div class="warn"><b>Heads up — this page can take a moment to refresh.</b> Use the <b>Refresh</b> button up top to force the latest numbers. If the app has been idle for a while it goes to sleep on Streamlit\'s free tier, so the first load after a quiet spell can take 20–40 seconds to wake up. Give it a moment, then refresh.</div>';}
 
+function scoreCardSection(sp){
+  const P4=(P.pdf&&P.pdf[sp.id])||{};
+  const t=[['Cars',fmt(sp.cars.sofar,0),'vs 4-wk '+pc(sp.cars.pace_pct),sp.status.cars],
+    ['ARO','$'+fmt(sp.aro.sofar,0),'$125 target · '+pc(sp.aro.gap_pct),sp.status.aro],
+    ['Net revenue','$'+fmt(sp.net.sofar,0),'vs 4-wk '+pc(sp.net.pace_pct),sp.status.net],
+    ['Big 4',fmt(sp.big4.pct,0)+'%','goal 53%',sp.status.big4],
+    ['LHPC',fmt(sp.lhpc.day,2),'target 1.10',sp.status.lhpc]];
+  const tiles='<div class="kbar">'+t.map(m=>`<div class="kc ${m[3]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]}</div></div>`).join('')+'</div>';
+  const dl=(lab,k,fn)=> P4[k]?`<a class="scbtn" download="${fn}" href="data:application/pdf;base64,${P4[k]}">⬇  ${lab}</a>`:`<span class="scbtn dis">${lab} · n/a</span>`;
+  const btns='<div class="scrow">'+dl('Today','today','scorecard_'+sp.id+'_today.pdf')
+    +dl('Yesterday'+(P4.ylabel||''),'yesterday','scorecard_'+sp.id+'_yesterday.pdf')
+    +dl('Last 7 days','week','scorecard_'+sp.id+'_7day.pdf')+'</div>';
+  return `<div class="card"><div class="sechead"><div class="accent" style="background:${C.navy}"></div><span class="st">Score card</span><span class="sn">today's KPIs vs targets · download a printable card</span></div>`
+    +tiles+btns+`<div class="foot" style="margin-top:8px">Green/amber/red show each metric against its target (ARO $125, Big 4 53%, LHPC 1.10); Cars & Net show the 4-week comparison. <b>Yesterday</b> is the full prior day; <b>Last 7 days</b> is a color-coded matrix of every KPI by day.</div></div>`;
+}
+
 function renderStore(sp){
   kill();
   document.getElementById('scope').textContent=sp.name+' · #'+sp.id;
@@ -169,7 +193,7 @@ function renderStore(sp){
   const km=[['Cars',fmt(sp.cars.sofar,0),pc(sp.cars.pace_pct)+' vs 4-wk',sp.status.cars,'cars'],
     ['ARO ($/car)','$'+fmt(sp.aro.sofar,0),pc(sp.aro.gap_pct)+' vs $125',sp.status.aro,'aro'],
     ['Net revenue','$'+fmt(sp.net.sofar,0),pc(sp.net.pace_pct)+' vs 4-wk',sp.status.net,'net'],
-    ['Big 4 (% goal)',fmt(sp.big4.score,0)+'%','goal 100%',sp.status.big4,'big4'],
+    ['Big 4 attach %',fmt(sp.big4.pct,0)+'%','goal 53%',sp.status.big4,'big4'],
     ['LHPC (hrs/car)',fmt(sp.lhpc.day,2),'target 1.10',sp.status.lhpc,'lhpc']];
   const kbar='<div class="kbar">'+km.map(m=>`<div class="kc ${m[3]}" title="${HELP[m[4]]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]}</div></div>`).join('')+'</div>';
   const drv=sp.drivers.map(d=>`<div class="drv ${d.st}" title="${d.s}"><div class="t">${d.t}</div><div class="m ${scls(d.st)}">${d.m}</div><div class="s">${d.s}</div></div>`).join('');
@@ -186,35 +210,37 @@ function renderStore(sp){
      kp:[['So far','$'+fmt(sp.aro.sofar,2),'',sp.status.aro],['Target','$125','',''],['Gap',pc(sp.aro.gap_pct),'',sp.status.aro]]},
     {k:'net',t:'Net revenue',n:'cumulative today vs projected close',ac:C.green,type:'cum',
      kp:[['So far','$'+fmt(sp.net.sofar,0),'',sp.status.net],['Projected','$'+fmt(sp.net.est_close,0),'',sp.status.net],['vs 4-wk',pc(sp.net.pace_pct),'',sp.status.net]]},
-    {k:'big4',t:'Big 4 attachment',n:'% of goal over the day + per-item vs target',ac:C.teal,type:'big4',
-     kp:[['Score',fmt(sp.big4.score,0)+'%','of goal',sp.status.big4],['Goal','100%','all 4 met',''],['Units',fmt(sp.big4.units,0),'today','']]},
+    {k:'big4',t:'Big 4 attachment',n:'attach % of cars over the day vs the 53% goal',ac:C.teal,type:'big4',
+     kp:[['Attach',fmt(sp.big4.pct,0)+'%','of cars',sp.status.big4],['Goal','53%','sum of 4',''],['Units',fmt(sp.big4.units,0),'today','']]},
     {k:'lhpc',t:'Labor efficiency · LHPC',n:'per-period hours behind rolling LHPC vs 1.10',ac:C.purple,type:'lhpc',
      kp:[['Now',fmt(sp.lhpc.now,2),'hrs/car',sp.status.lhpc],['Target','1.10','',''],['Day',fmt(sp.lhpc.day,2),'',sp.status.lhpc]]}];
   let body=kbar+row2;
   secs.forEach(s=>{
     const kb=s.kp.map(k=>`<div class="tile ${k[3]||''}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s ${scls(k[3])}">${k[2]||'&nbsp;'}</div></div>`).join('');
     let ch;
-    if(s.type==='big4') ch=`<div class="big4grid" style="display:grid;grid-template-columns:1.1fr .9fr;gap:14px"><div>${DB}<div style="position:relative;height:196px"><canvas id="c_big4"></canvas></div></div><div><div class="l" style="font-size:.61rem;color:var(--label);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px">% of goal by item</div><div id="bul"></div></div></div>`;
+    if(s.type==='big4') ch=`<div class="big4grid" style="display:grid;grid-template-columns:1.1fr .9fr;gap:14px"><div>${DB}<div style="position:relative;height:196px"><canvas id="c_big4"></canvas></div></div><div><div class="l" style="font-size:.61rem;color:var(--label);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px">Attach % by item vs target</div><div id="bul"></div></div></div>`;
     else if(s.type==='lhpc') ch=`<div>${DB}<div style="position:relative;height:230px"><canvas id="c_lhpc"></canvas></div><div class="expl"><b>LHPC = labor hours per car.</b> Lower = leaner / more efficient; higher = overstaffed for the volume. The <b>1.10 target</b> is the balance — well below can mean understaffed, above means idle labor.</div></div>`;
     else ch=`<div>${DB}<div style="position:relative;height:216px"><canvas id="c_${s.k}"></canvas></div></div>`;
     body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${s.ac}"></div><span class="st">${s.t}</span><span class="sn">${s.n}</span></div><div class="mrow"><div class="kbox">${kb}</div>${ch}</div></div>`;
   });
+  body+=scoreCardSection(sp);
   body+='<div class="card"><div class="sechead"><div class="accent" style="background:var(--mute)"></div><span class="st">Operational detail</span><span class="sn">the numbers behind the day</span></div><div class="ops">'
     +sp.ops.map(o=>`<div class="o"><div class="l">${o[0]}</div><div class="v">${o[1]}</div><div class="s">${o[2]}</div></div>`).join('')
     +'</div><div class="foot" style="margin-top:9px"><b>4-Week Comparison</b> = vs the simple 4-week same-weekday average by this time. <b>Projected</b> = today\'s banked total plus a recency-weighted 4-week average of the rest of the day, scaled by today\'s pacing (clamped 0.7–1.5×). Projection is an estimate and has not yet been backtested.</div></div>';
   body+=warnBlock();
   document.getElementById('view').innerHTML=body;
   const L=sp.hours, fB='rgba(46,111,183,.10)';
-  const carsTip={label:c=>c.dataset.label+': '+fmt(c.parsed.y,0)+' cars'};
-  const netTip={label:c=>c.dataset.label+': $'+fmt(c.parsed.y,0)};
-  CH.push(new Chart(c_cars,{type:'line',data:{labels:L,datasets:[ln('Actual',sp.cars.actual,C.blue,[],fB),ln('Projected',sp.cars.est,C.green,[6,4])]},options:opts(sp.now,null,carsTip)}));
-  CH.push(new Chart(c_net,{type:'line',data:{labels:L,datasets:[ln('Actual',sp.net.actual,C.blue,[],fB),ln('Projected',sp.net.est,C.green,[6,4])]},options:opts(sp.now,null,netTip)}));
+  CH.push(new Chart(c_cars,{type:'line',data:{labels:L,datasets:[ln('Actual',sp.cars.actual,C.blue,[],fB),ln('Projected',sp.cars.est,C.green,[6,4])]},options:opts(sp.now,null,{label:c=>c.dataset.label+': '+fmt(c.parsed.y,0)+' cars'})}));
+  CH.push(new Chart(c_net,{type:'line',data:{labels:L,datasets:[ln('Actual',sp.net.actual,C.blue,[],fB),ln('Projected',sp.net.est,C.green,[6,4])]},options:opts(sp.now,null,{label:c=>c.dataset.label+': $'+fmt(c.parsed.y,0)})}));
   CH.push(new Chart(c_aro,{type:'line',data:{labels:L,datasets:[ln('ARO',sp.aro.run,C.blue,[],fB)]},options:opts(sp.now,{t:tline(125,C.amber,'$125')},{label:c=>'ARO: $'+fmt(c.parsed.y,2)})}));
-  CH.push(new Chart(c_big4,{type:'line',data:{labels:L,datasets:[ln('Big 4 % of goal',sp.big4.run,C.teal,[],'rgba(14,116,144,.10)')]},
-    options:Object.assign(opts(sp.now,{t:tline(100,C.green,'goal 100%')},{label:c=>'Big 4: '+fmt(c.parsed.y,0)+'% of goal'}),
-     {scales:{x:{grid:{display:false},border:{display:false},ticks:{color:C.mute,font:{size:10}}},y:{grid:{color:C.line},border:{display:false},beginAtZero:true,max:110,ticks:{color:C.mute,font:{size:10},callback:v=>v+'%'}}}})}));
-  document.getElementById('bul').innerHTML=sp.big4.items.map((it,i)=>{const sc=it.attain>=90?C.green:(it.attain>=60?C.amber:C.red),col=IC[i];
-    return `<div class="bullet" title="${it.name}: ${it.attach}% attach vs ${it.target}% target — ${fmt(it.attain,0)}% of goal"><span class="bn">${it.name}</span><div class="track"><span class="fill" style="width:${Math.min(100,it.attain)}%;background:${col}"></span><span class="tgt" style="left:100%"></span><span class="act" style="left:${Math.min(100,it.attain)}%;background:${col}"></span></div><span class="bv" style="color:${sc}">${it.attach}% / ${it.target}%</span></div>`;}).join('');
+  CH.push(new Chart(c_big4,{type:'line',data:{labels:L,datasets:[ln('Big 4 attach %',sp.big4.run,C.teal,[],'rgba(14,116,144,.10)')]},
+    options:Object.assign(opts(sp.now,{t:tline(sp.big4.target,C.green,'goal '+sp.big4.target+'%')},{label:c=>'Big 4: '+fmt(c.parsed.y,0)+'% of cars'}),
+     {scales:{x:{grid:{display:false},border:{display:false},ticks:{color:C.mute,font:{size:10}}},y:{grid:{color:C.line},border:{display:false},beginAtZero:true,suggestedMax:Math.max(60,sp.big4.target+10),ticks:{color:C.mute,font:{size:10},callback:v=>v+'%'}}}})}));
+  // per-item bullets vs each item's own target (old style); scale to fit, clamp 100
+  const MX=Math.max(30,...sp.big4.items.flatMap(it=>[it.attach,it.target]))*1.15;
+  const pos=v=>Math.min(100,v/MX*100);
+  document.getElementById('bul').innerHTML=sp.big4.items.map((it,i)=>{const r=it.target?it.attach/it.target:0,sc=r>=1?C.green:(r>=.6?C.amber:C.red),col=IC[i];
+    return `<div class="bullet" title="${it.name}: ${it.attach}% attach vs ${it.target}% target"><span class="bn">${it.name}</span><div class="track"><span class="fill" style="width:${pos(it.attach)}%;background:${col}"></span><span class="tgt" style="left:${pos(it.target)}%"></span><span class="act" style="left:${pos(it.attach)}%;background:${col}"></span></div><span class="bv" style="color:${sc}">${it.attach}% / ${it.target}%</span></div>`;}).join('');
   CH.push(new Chart(c_lhpc,{data:{labels:L,datasets:[
     {type:'bar',label:'Hours',data:sp.lhpc.hours,backgroundColor:'rgba(108,79,182,.15)',yAxisID:'y1',borderRadius:3,barPercentage:.72,order:2},
     {type:'line',label:'Rolling LHPC',data:sp.lhpc.roll,borderColor:C.purple,borderWidth:2.6,tension:.4,pointRadius:0,pointHoverRadius:4,yAxisID:'y',order:1,borderCapStyle:'round'}]},
@@ -239,9 +265,9 @@ function renderAdmin(ids,label){
     ['Total cars',fmt(tc,0),(avg>=0?'+':'')+avg+'% avg vs 4-wk',avg>=0?'g':'r','Total cars serviced across the scope, and the average 4-week comparison.'],
     ['Total net','$'+fmt(tn,0),'','flat','Total net sales across the scope so far today.'],
     ['Avg ARO','$'+fmt(aro,0),aro>=125?'at goal':'below $125',aro>=125?'g':'r','Cars-weighted average repair order vs the $125 target.'],
-    ['Big 4 (% goal)',Math.round(b4avg)+'%','goal 100%',b4avg>=90?'g':(b4avg>=60?'a':'r'),'Cars-weighted Big 4 Score across the scope. 100% = every item at target.']];
+    ['Big 4 attach %',Math.round(b4avg)+'%','goal 53%',b4avg>=53?'g':(b4avg>=32?'a':'r'),'Cars-weighted Big 4 attach % across the scope, vs the 53% goal.']];
   let body='<div class="kbar">'+km.map(m=>`<div class="kc ${m[3]}" title="${m[4]}"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="d ${scls(m[3])}">${m[2]||'&nbsp;'}</div></div>`).join('')+'</div>';
-  body+='<div class="card"><h3 class="sh">How to read this</h3><div class="pacebox"><b>4-Week Comparison</b> = cars so far vs a <b>normal day</b> by this time (simple average of the last 4 same-weekdays). <b>+%</b> ahead, <b>−%</b> behind. ARO goal is a flat $125. <b>Big 4</b> is scored as % of goal (average of the four items vs their targets).</div></div>';
+  body+='<div class="card"><h3 class="sh">How to read this</h3><div class="pacebox"><b>4-Week Comparison</b> = cars so far vs a <b>normal day</b> by this time (simple average of the last 4 same-weekdays). <b>+%</b> ahead, <b>−%</b> behind. ARO goal is a flat $125. <b>Big 4</b> is the attach % of cars, vs a 53% goal.</div></div>';
   const rk=[...rows].sort((a,b)=>(b.pace===null?-1e9:b.pace)-(a.pace===null?-1e9:a.pace));
   let tr='';
   rk.forEach((r,i)=>{const pc2=r.pace===null?'':(r.pace>=0?'+':'')+r.pace+'%';const col=r.pace===null?C.mute:(r.pace>=3?C.green:r.pace<=-3?C.red:C.amber);
@@ -252,7 +278,7 @@ function renderAdmin(ids,label){
       <td>${r.lhpc===null?'—':fmt(r.lhpc,2)}</td><td title="${tip}" style="cursor:help">${r.big4===null?'—':fmt(r.big4,0)+'%'}</td><td title="differentials: units · % of cars">${dcell}</td>
       <td class="pace" style="color:${col}">${pc2||'—'}</td></tr>`;});
   body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.red}"></div><span class="st">Store ranking</span><span class="sn">click a store to open its full dashboard</span></div>
-    <table><thead><tr><th>#</th><th>Store</th><th>Open</th><th>Cars</th><th>Net</th><th>ARO</th><th>LHPC</th><th>Big 4</th><th>Diff</th><th>vs 4-wk</th></tr></thead><tbody>${tr}</tbody></table></div>`;
+    <div class="tscroll"><table><thead><tr><th>#</th><th>Store</th><th>Open</th><th>Cars</th><th>Net</th><th>ARO</th><th>LHPC</th><th>Big 4</th><th>Diff</th><th>vs 4-wk</th></tr></thead><tbody>${tr}</tbody></table></div></div>`;
   const HR=['Before open'].concat(P.hours).concat(['After close']); let gmax=1;
   rk.forEach(r=>r.heat.forEach(v=>{if(v!==null&&v>gmax)gmax=v;}));
   let hg=`<div></div>`+rk.map(r=>`<div class="hhdr">${r.name}<br>${r.id}</div>`).join('');
@@ -262,18 +288,18 @@ function renderAdmin(ids,label){
   body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.blue}"></div><span class="st">Heat map</span><span class="sn">cars per hour · darker = busier · first/last rows roll up before-open & after-close</span></div>
     <div class="heat"><div class="hgrid" id="hg" style="grid-template-columns:78px repeat(${rk.length},minmax(40px,1fr))">${hg}</div></div>
     <div style="display:flex;align-items:center;gap:9px;margin-top:10px;font-size:.7rem;color:var(--mute)"><span>Fewer</span><span style="flex:0 0 140px;height:9px;border-radius:5px;background:linear-gradient(90deg,rgba(31,111,178,.10),rgba(31,111,178,.92))"></span><span>More</span><span style="margin-left:auto">One absolute scale across these stores.</span></div></div>`;
-  body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.teal}"></div><span class="st">Big 4 by store</span><span class="sn">Big 4 Score (% of goal) · goal line at 100%</span></div>
+  body+=`<div class="card"><div class="sechead"><div class="accent" style="background:${C.teal}"></div><span class="st">Big 4 by store</span><span class="sn">attach % of cars · goal line at 53%</span></div>
     <div style="position:relative;height:${Math.max(220,rk.length*26+50)}px"><canvas id="b4"></canvas></div></div>`;
   body+='<div class="foot card"><b>4-Week Comparison</b> = cars so far vs the simple 4-week same-weekday average by this time (+/−%). Click any store to open its full dashboard.</div>';
   body+=warnBlock();
   document.getElementById('view').innerHTML=body;
   const bs=[...rows].filter(r=>r.big4!==null).sort((a,b)=>a.big4-b.big4);
   CH.push(new Chart(document.getElementById('b4'),{type:'bar',data:{labels:bs.map(r=>r.name+' ('+r.id+')'),
-    datasets:[{data:bs.map(r=>r.big4),backgroundColor:bs.map(r=>r.big4>=90?C.green:(r.big4>=60?C.amber:C.red)),borderRadius:5,barPercentage:.72}]},
+    datasets:[{data:bs.map(r=>r.big4),backgroundColor:bs.map(r=>r.big4>=53?C.green:(r.big4>=32?C.amber:C.red)),borderRadius:5,barPercentage:.72}]},
     options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
-     plugins:{legend:{display:false},tooltip:{backgroundColor:C.navy,padding:9,cornerRadius:6,callbacks:{label:c=>c.parsed.x+'% of goal'}},
-      annotation:{annotations:{g:{type:'line',scaleID:'x',value:100,borderColor:C.green,borderWidth:2,borderDash:[6,4],label:{display:true,content:'goal 100%',position:'end',backgroundColor:C.green,color:'#fff',font:{size:8,weight:700},padding:{x:4,y:2},borderRadius:3}}}}},
-     scales:{x:{grid:{color:C.line},border:{display:false},max:110,ticks:{color:C.mute,callback:v=>v+'%'}},y:{grid:{display:false},border:{display:false},ticks:{color:C.navy,font:{size:11,weight:600}}}}}}));
+     plugins:{legend:{display:false},tooltip:{backgroundColor:C.navy,padding:9,cornerRadius:6,callbacks:{label:c=>c.parsed.x+'% of cars'}},
+      annotation:{annotations:{g:{type:'line',scaleID:'x',value:53,borderColor:C.green,borderWidth:2,borderDash:[6,4],label:{display:true,content:'goal 53%',position:'end',backgroundColor:C.green,color:'#fff',font:{size:8,weight:700},padding:{x:4,y:2},borderRadius:3}}}}},
+     scales:{x:{grid:{color:C.line},border:{display:false},suggestedMax:60,ticks:{color:C.mute,callback:v=>v+'%'}},y:{grid:{display:false},border:{display:false},ticks:{color:C.navy,font:{size:11,weight:600}}}}}}));
 }
 
 function fmt(v,dp){if(v===null||v===undefined)return '—';return Number(v).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});}
@@ -308,7 +334,6 @@ function go(key){
   window.scrollTo(0,0);
 }
 
-// init — empty-state guard so a store login can never render blank (review H3)
 function emptyState(msg){document.getElementById('tabs').style.display='none';document.getElementById('subtabs').style.display='none';
   document.getElementById('view').innerHTML='<div class="card" style="text-align:center;padding:34px 18px"><div style="font-size:1.05rem;font-weight:800;color:var(--navy);margin-bottom:6px">Data is temporarily unavailable</div><div class="foot" style="max-width:520px;margin:0 auto">'+msg+'</div></div>'+warnBlock();}
 if(!P.allowed||!P.allowed.length||!P.stores||!Object.keys(P.stores).length){
