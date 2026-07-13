@@ -1,4 +1,4 @@
-"""Take 5 Scorecard V2 - central config. No Streamlit import (testable)."""
+"""Take 5 Scorecard V3 - central config. No Streamlit import (testable)."""
 from zoneinfo import ZoneInfo
 
 CENTRAL = ZoneInfo("America/Chicago")
@@ -24,7 +24,13 @@ DISTRICTS = {"1111":("DM South",["1503","1504","1505","1509","1517"]),
 HOURS = {0:(7,20),1:(7,20),2:(7,20),3:(7,20),4:(7,20),5:(7,18),6:(9,17)}
 DOW = {0:"Mon",1:"Tues",2:"Wed",3:"Thurs",4:"Fri",5:"Sat",6:"Sun"}
 DOW_FULL = {0:"Monday",1:"Tuesday",2:"Wednesday",3:"Thursday",4:"Friday",5:"Saturday",6:"Sunday"}
-HIST_DAYS = 400                       # wide: section-9 picks the recent 4 same-weekdays
+HIST_DAYS = 400                       # wide: section-9 picks the recent 4 same-weekdays.
+# NOTE (V3): the seeded baseline is ~1yr old summer data, so this window MUST stay
+# wide or the norms go empty. The review's "45-day cap" would delete the baseline;
+# instead we harden fetch_history with desc order + an explicit row cap (below).
+HIST_MAX_ROWS = 8000                  # explicit ceiling; desc order keeps NEWEST rows
+                                      # if the PostgREST db-max-rows cap is lower (H1 fix)
+SCORECARD_DAYS = 7                    # weekly matrix scorecard span
 
 RECENCY_W = [0.40,0.30,0.20,0.10]      # weighted (estimated) - newest first
 MAD_K = 3.0
@@ -32,10 +38,15 @@ PACE_CLAMP = (0.7,1.5)
 
 ARO_TARGET = 125.0
 LHPC_TARGET = 1.10
-# Big 4/5 per-item attach-% targets; overall Big 4/5 target = sum
+# Big 4 per-item attach-% targets. V3: the headline is a "Big 4 Score" = the simple
+# average of each item's attainment (attach / target, capped at 100%), so hitting all
+# four targets = 100%. See calc.big4_score. BIG4_SCORE_TARGET is the goal line (100).
 BIG4_TARGETS = {"Air Filter":25,"Cabin Filter":10,"Wiper Blade":10,"Coolant Exchange":8}
+BIG4_SCORE_TARGET = 100                       # a full-attainment Big 4 score
+BIG4_SCORE_GREEN = 90                          # >=90% of goal = green
+BIG4_SCORE_AMBER = 60                          # >=60% = amber, below = red
 DIFF_TARGET = 3
-BIG45_TARGET = sum(BIG4_TARGETS.values())    # 53
+ATTACH_SUM_TARGET = sum(BIG4_TARGETS.values()) # 53 (kept for reference/labels only)
 
 # palette (also used by the PDF)
 NAVY="#14273F"; RED="#D0342C"; BLUE="#2E6FB7"; GREEN="#158A5A"; AMBER="#B57611"
