@@ -95,20 +95,20 @@ def _cards_today(sp):
         ("Cars", f"{sp['cars']['sofar']:,.0f}", _pace(sp["cars"]["pace_pct"]) + " vs 4-wk", rgb("cars")),
         ("ARO", f"${sp['aro']['sofar']:,.2f}" if sp['aro']['sofar'] else "—", _pace(sp["aro"]["gap_pct"]) + " vs $125", rgb("aro")),
         ("Net revenue", f"${sp['net']['sofar']:,.0f}", _pace(sp["net"]["pace_pct"]) + " vs 4-wk", rgb("net")),
-        ("Big 4 attach %", f"{sp['big4']['pct']:,.0f}%" if sp['big4']['pct'] is not None else "—", "goal 53%", rgb("big4")),
+        ("Big 4 avg %", f"{sp['big4']['pct']:,.0f}%" if sp['big4']['pct'] is not None else "—", "goal 13%", rgb("big4")),
         ("LHPC", f"{sp['lhpc']['day']:.2f}" if sp['lhpc']['day'] else "—", "target 1.10", rgb("lhpc")),
         ("Differentials", f"{d['units']}", f"${d['amount']:,.0f} · {(d.get('pct') or 0):.0f}% of cars", _hex(PURPLE)),
     ]
 
 def _cards_day(s):
     def aro_c(v): return _hex(GREEN) if v>=125 else (_hex(AMBER) if v>=117.5 else _hex(RED))
-    def b4_c(v): return _hex(GREEN) if v>=53 else (_hex(AMBER) if v>=32 else _hex(RED))
+    def b4_c(v): return _hex(GREEN) if v>=13.25 else (_hex(AMBER) if v>=8 else _hex(RED))
     def lh_c(v): return _hex(GREEN) if v<=1.10 else (_hex(AMBER) if v<=1.25 else _hex(RED))
     return [
         ("Cars", f"{s['cars']:,}" if s['cars'] is not None else "—", "full day", _hex(NAVY)),
         ("ARO", f"${s['aro']:,.2f}" if s['aro'] is not None else "—", "target $125", aro_c(s['aro']) if s['aro'] is not None else _hex(NAVY)),
         ("Net revenue", f"${s['net']:,.0f}" if s['net'] is not None else "—", "full day", _hex(GREEN)),
-        ("Big 4 attach %", f"{s['big4']:.0f}%" if s['big4'] is not None else "—", "goal 53%", b4_c(s['big4']) if s['big4'] is not None else _hex(NAVY)),
+        ("Big 4 avg %", f"{s['big4']:.0f}%" if s['big4'] is not None else "—", "goal 13%", b4_c(s['big4']) if s['big4'] is not None else _hex(NAVY)),
         ("LHPC", f"{s['lhpc']:.2f}" if s['lhpc'] is not None else "—", "target 1.10", lh_c(s['lhpc']) if s['lhpc'] is not None else _hex(NAVY)),
         ("Differentials", f"{s['diff']}", f"{(s['diff_pct'] or 0):.0f}% of cars", _hex(PURPLE)),
     ]
@@ -130,7 +130,7 @@ def _multiday_b64(store, hourstamp):
     except Exception:
         ds = y["date"] or ""
     try:
-        out["yesterday"] = base64.b64encode(scorecard_pdf.build_scorecard_pdf(name, store, ds, "", _cards_day(y))).decode()
+        out["yesterday"] = base64.b64encode(scorecard_pdf.build_scorecard_pdf(name, store, ds, "", _cards_day(y), grade=y.get("grade"))).decode()
     except Exception as e:
         print(f"[scorecard] yesterday {store}: {type(e).__name__}: {e}")
     try:
@@ -165,7 +165,7 @@ def build_payload(tier, allowed, scope_label, stamp):
         sp = stores[s]
         try:
             today_b64 = base64.b64encode(scorecard_pdf.build_scorecard_pdf(
-                sp["name"], s, sp["date"], sp["asof"], _cards_today(sp))).decode()
+                sp["name"], s, sp["date"], sp["asof"], _cards_today(sp), grade=sp.get("grade"))).decode()
         except Exception as e:
             print(f"[scorecard] today {s}: {type(e).__name__}: {e}"); today_b64 = ""
         md = _multiday_b64(s, hourstamp)

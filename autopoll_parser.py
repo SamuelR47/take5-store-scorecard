@@ -243,7 +243,11 @@ def validate(d):
     problems = []
     if not d.get("store_number"):
         problems.append("no store number parsed")
-    if not d.get("line_items"):
+    # Only flag missing line items when there's evidence of activity. A store that is
+    # open but hasn't rung anything up yet (early morning) legitimately has no product
+    # rows; treating that as a failure red-X'd the whole hourly run and saved nothing.
+    # With cars/net both empty, an empty report is valid -> a zero row is upserted.
+    if not d.get("line_items") and (d.get("cars") or d.get("net_sales")):
         problems.append("no line items parsed")
     if d.get("net_sales") is None:
         problems.append("net_sales missing")
