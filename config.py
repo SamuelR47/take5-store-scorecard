@@ -21,7 +21,7 @@ DISTRICTS = {"1111":("DM South",["1503","1504","1505","1509","1517"]),
 # Admin access is controlled solely by the ADMIN_PASSWORD secret (see app.py).
 # No password is stored in source, so admin fails closed if the secret is unset.
 
-HOURS = {0:(7,20),1:(7,20),2:(7,20),3:(7,20),4:(7,20),5:(7,18),6:(9,17)}
+HOURS = {0:(6,20),1:(6,20),2:(6,20),3:(6,20),4:(6,20),5:(6,18),6:(9,17)}  # Mon-Fri 6a-8p, Sat 6a-6p, Sun 9a-5p
 DOW = {0:"Mon",1:"Tues",2:"Wed",3:"Thurs",4:"Fri",5:"Sat",6:"Sun"}
 DOW_FULL = {0:"Monday",1:"Tuesday",2:"Wednesday",3:"Thursday",4:"Friday",5:"Saturday",6:"Sunday"}
 HIST_DAYS = 400                       # wide: section-9 picks the recent 4 same-weekdays.

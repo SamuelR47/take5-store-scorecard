@@ -47,8 +47,8 @@ def get_stores():
 # Store open hours in Central time, keyed by Python weekday (Mon=0 .. Sun=6).
 # (open_hour, close_hour) 24h. We pull on any hour where open <= hour <= close.
 HOURS = {
-    0: (7, 20), 1: (7, 20), 2: (7, 20), 3: (7, 20), 4: (7, 20),  # Mon-Fri 7a-8p
-    5: (7, 18),   # Sat 7a-6p
+    0: (6, 20), 1: (6, 20), 2: (6, 20), 3: (6, 20), 4: (6, 20),  # Mon-Fri 6a-8p
+    5: (6, 18),   # Sat 6a-6p
     6: (9, 17),   # Sun 9a-5p
 }
 
