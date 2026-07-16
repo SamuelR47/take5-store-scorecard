@@ -148,6 +148,21 @@ def upsert_supabase(url, key, data, now):
     resp.raise_for_status()
 
 
+def report_date(data):
+    """The calendar date the REPORT itself is for, parsed from report_timestamp
+    (e.g. '7/15/2026  08:54 AM'). Used to catch a store whose AutoPoll hasn't rolled
+    over to today yet and is still serving yesterday's final report."""
+    ts = (data.get("report_timestamp") or "").strip()
+    m = re.match(r"\s*(\d{1,2})/(\d{1,2})/(\d{4})", ts)
+    if not m:
+        return None
+    mo, da, yr = (int(x) for x in m.groups())
+    try:
+        return dt.date(yr, mo, da)
+    except ValueError:
+        return None
+
+
 def pull_store(session, store, retries=3):
     last = None
     for attempt in range(1, retries + 1):
@@ -157,6 +172,16 @@ def pull_store(session, store, retries=3):
             problems = ap.validate(data)
             if problems:
                 raise ValueError(f"validation: {problems}")
+            # Reject a stale report: if the report's own date isn't today (Central),
+            # AutoPoll hasn't rolled this store to the new business day yet and is still
+            # showing yesterday's totals. Saving it would poison today's early hour with
+            # yesterday's cumulative (a big spike + a negative correction next hour). Skip
+            # this store this cycle; the next pull (once AutoPoll rolls over) captures it.
+            rd = report_date(data)
+            today = dt.datetime.now(CENTRAL).date()
+            if rd is not None and rd != today:
+                raise ValueError(f"stale report dated {rd} (expected {today}); "
+                                 f"AutoPoll not rolled to today yet")
             return data, text
         except Exception as e:
             last = e
