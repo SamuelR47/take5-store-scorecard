@@ -29,9 +29,13 @@ def cum_by_hour(rows,key):
         if v is not None: out[h]=float(v)
     return out
 def to_per_period(cum):
+    # Cumulative daily metrics only ever rise, so a per-hour increment can't be negative.
+    # Floor at 0 so a bad/stale reading (e.g. a stray high value that later corrects down)
+    # can never render as negative cars/sales for an hour. Defense-in-depth behind the
+    # scraper's stale-report guard.
     if not cum: return {}
     pp={}; prev=0.0
-    for h in sorted(cum): pp[h]=cum[h]-prev; prev=cum[h]
+    for h in sorted(cum): pp[h]=max(0.0, cum[h]-prev); prev=cum[h]
     return pp
 
 # ---------- holidays ----------
@@ -327,3 +331,62 @@ def days_back_summaries(hist_rows, n, today_date):
         if d and d!=today_date: byd.setdefault(d,[]).append(r)
     dates=sorted(byd,reverse=True)[:n]
     return [day_summary(byd[d]) for d in dates]
+
+# ---------- V4 (D): weekly history (last week vs the last-4-week average) ----------
+def daily_components(hist_rows, today_date):
+    """Per calendar day (before today), the RAW pieces needed to aggregate a metric
+    correctly across a week: cars, net, Big 4 units, labor hours. Using raw pieces
+    (not the daily % KPIs) lets weekly ARO/Big4/LHPC be volume-weighted rather than a
+    mean-of-daily-ratios. One row per day = that day's last (most complete) snapshot."""
+    byd={}
+    for r in hist_rows:
+        d=row_date(r)
+        if d and d!=today_date: byd.setdefault(d,[]).append(r)
+    out={}
+    for d,rows in byd.items():
+        latest=sorted(rows,key=lambda r:r.get("pull_time") or "")[-1]
+        ba=big4_attach(latest); lab=labor_block(latest)
+        out[d]={"cars":latest.get("cars") or 0,"net":latest.get("net_sales") or 0,
+                "big4_units":ba["units"] or 0,"labor":lab.get("hours")}
+    return out
+
+def _week_value(metric,C,N,U,L,has_labor):
+    if metric=="cars": return round(C)
+    if metric=="net":  return round(N)
+    if metric=="aro":  return round(N/C,2) if C else None
+    if metric=="big4": return round(U/C*100,1) if C else None
+    if metric=="lhpc": return round(L/C,2) if (C and has_labor) else None
+    return None
+
+def weekly_series(hist_rows, today_date, metric, weeks=5):
+    """Aggregate `metric` into the last `weeks` seven-day windows ending the day before
+    `today_date`, oldest first (so the last entry is 'last week'). Ratio metrics are
+    volume-weighted across each window. Each entry: label, value, cars, days, is_last."""
+    comp=daily_components(hist_rows,today_date)
+    try: t=dt.date.fromisoformat(today_date)
+    except (ValueError,TypeError): return []
+    res=[]
+    for k in range(weeks-1,-1,-1):                 # oldest window first
+        end=t-dt.timedelta(days=7*k+1); start=t-dt.timedelta(days=7*k+7)
+        C=N=U=L=0.0; has_labor=False; ndays=0
+        for d,v in comp.items():
+            try: dd=dt.date.fromisoformat(d)
+            except (ValueError,TypeError): continue
+            if start<=dd<=end:
+                C+=v["cars"]; N+=v["net"]; U+=v["big4_units"]
+                if v["labor"] is not None: L+=v["labor"]; has_labor=True
+                ndays+=1
+        lab=f"{start:%-m/%-d}"
+        res.append({"label":("Last wk" if k==0 else lab),"range":f"{start:%-m/%-d}–{end:%-m/%-d}",
+                    "value":_week_value(metric,C,N,U,L,has_labor),
+                    "cars":round(C),"days":ndays,"is_last":k==0})
+    return res
+
+def week_vs_baseline(series):
+    """(last_week_value, avg_of_prior_weeks, pct_diff) from a weekly_series list."""
+    if not series: return None,None,None
+    last=series[-1]["value"]
+    prior=[s["value"] for s in series[:-1] if s["value"] is not None]
+    base=statistics.fmean(prior) if prior else None
+    pct=((last/base)-1)*100 if (last is not None and base) else None
+    return last, base, (round(pct,1) if pct is not None else None)

@@ -16,8 +16,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from config import (BRAND, CENTRAL, STORE_CODES, CITY, REGIONS, DISTRICTS,
-                    HOURS, NAVY, GREEN, RED, AMBER, PURPLE, SCORECARD_DAYS)
-import calc, dashboard, scorecard_pdf
+                    HOURS, NAVY, GREEN, RED, AMBER, PURPLE, MUTE, SCORECARD_DAYS,
+                    ARO_TARGET, LHPC_TARGET, BIG4_GOAL)
+import calc, dashboard, scorecard_pdf, identity
 from datasource import fetch_today, fetch_history, fetch_days, healthcheck
 
 st.set_page_config(page_title=f"{BRAND} - Take 5 Scorecard", layout="wide",
@@ -52,9 +53,81 @@ def region_of(store):
     return ""
 
 
+def _parse_ts(s):
+    """Parse a Supabase timestamptz string to an aware datetime, or None."""
+    if not s:
+        return None
+    try:
+        return dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 def is_mobile():
     try: return st.query_params.get("view") == "phone"
     except Exception: return False
+
+
+def _sl(s):
+    return f"{CITY.get(s, s)} #{s}"
+
+
+def _picker(options, current, key, mobile):
+    """Segmented-control 'tabs' on desktop where available; compact selectbox on phone
+    or older Streamlit. Returns the selected option string."""
+    sc = getattr(st, "segmented_control", None)
+    if sc and not mobile:
+        try:
+            return sc("scope", options, default=current if current in options else options[0],
+                      key=key, label_visibility="collapsed")
+        except Exception:
+            pass
+    idx = options.index(current) if current in options else 0
+    return st.selectbox("scope", options, index=idx, key=key, label_visibility="collapsed")
+
+
+def _scope_controls(role, user, mobile):
+    """Render the native scope tabs above the dashboard and return the ?scope= string.
+    Admin = two levels (region, then store); DM = team overview + own stores; store = none."""
+    try:
+        cur = st.query_params.get("scope", "") or ""
+    except Exception:
+        cur = ""
+
+    if role == "store":
+        return ""
+
+    if role == "district":
+        ids = user["stores"]
+        opts = ["Team overview"] + [_sl(s) for s in ids]
+        curlabel = "Team overview"
+        if cur.startswith("store:"):
+            s = cur.split(":", 1)[1]
+            if s in ids: curlabel = _sl(s)
+        pick = _picker(opts, curlabel, "scope_dm", mobile)
+        newscope = "all" if pick == "Team overview" else "store:" + pick.rsplit("#", 1)[-1].strip()
+
+    else:  # admin — level 1: region
+        region_opts = ["All Stores"] + list(REGIONS.keys())
+        curregion = identity.scope_region_of(cur) or "All Stores"
+        if curregion not in region_opts: curregion = "All Stores"
+        reg = _picker(region_opts, curregion, "scope_admin_region", mobile)
+        if reg == "All Stores":
+            newscope = "all"
+        else:  # level 2: store within the region
+            ids = REGIONS[reg]
+            st_opts = ["Region overview"] + [_sl(s) for s in ids]
+            curstore = "Region overview"
+            if cur.startswith("store:"):
+                s = cur.split(":", 1)[1]
+                if s in ids: curstore = _sl(s)
+            pick = _picker(st_opts, curstore, f"scope_admin_store_{reg}", mobile)
+            newscope = ("region:" + reg) if pick == "Region overview" else "store:" + pick.rsplit("#", 1)[-1].strip()
+
+    if newscope != cur:
+        try: st.query_params["scope"] = newscope
+        except Exception: pass
+    return newscope
 
 
 def login_view():
@@ -149,6 +222,13 @@ def build_payload(tier, allowed, scope_label, stamp):
         return s, fetch_today(s), fetch_history(s)
     with ThreadPoolExecutor(max_workers=8) as ex:
         fetched = list(ex.map(_pull, allowed))
+    # F: newest pull_time across the in-scope stores = when the data was last sourced.
+    newest = None
+    for _s, td, _hist in fetched:
+        for r in td:
+            ts = _parse_ts(r.get("pull_time"))
+            if ts and (newest is None or ts > newest):
+                newest = ts
     stores, rows, ok = {}, {}, []
     for s, td, hist in fetched:
         try:
@@ -170,10 +250,16 @@ def build_payload(tier, allowed, scope_label, stamp):
             print(f"[scorecard] today {s}: {type(e).__name__}: {e}"); today_b64 = ""
         md = _multiday_b64(s, hourstamp)
         pdf[s] = {"today": today_b64, "yesterday": md["yesterday"], "week": md["week"], "ylabel": md["ylabel"]}
+    # Admin nav shows only regions that actually have in-scope stores, so a region-scoped
+    # admin view (V4 scope tabs) doesn't list empty regions in the in-component nav.
+    regions = ({r: [s for s in ids if s in allowed]
+                for r, ids in REGIONS.items() if any(s in allowed for s in ids)}
+               if tier == "admin" else {})
     return {"tier": tier, "scope_label": scope_label, "allowed": allowed,
-            "regions": REGIONS if tier == "admin" else {}, "stores": stores, "rows": rows,
+            "regions": regions, "stores": stores, "rows": rows,
             "hours": hours, "date": stores[allowed[0]]["date"] if allowed else "",
-            "asof": now.strftime("%-I:%M %p"), "pdf": pdf}
+            "asof": now.strftime("%-I:%M %p"), "pdf": pdf,
+            "sourced_epoch": newest.timestamp() if newest else None}
 
 
 # ---------------- user guide (rendered as images -> reliable everywhere) ----------------
@@ -225,25 +311,101 @@ else:
 _fragment = getattr(st, "fragment", None) or getattr(st, "experimental_fragment")
 
 
-@_fragment(run_every=1800)
+# run_every=600 (10 min): the scraper is hourly, so this catches a new pull within
+# ~10 min while staying cheap. NOTE: st.fragment only supports a fixed INTERVAL, not a
+# wall-clock time, so we can't literally fire "5 min after the scraper"; the freshness
+# line below shows the true last-sourced time regardless, so any staleness is visible.
+@_fragment(run_every=600)
 def _dashboard_view(tier, allowed, scope, mobile):
     now = dt.datetime.now(CENTRAL)
     stamp = now.strftime("%Y-%m-%d-%H-%M")
     payload = build_payload(tier, allowed, scope, stamp)
+    ep = payload.get("sourced_epoch")
+    if ep:
+        srcd = dt.datetime.fromtimestamp(ep, CENTRAL)
+        mins = int((now - srcd).total_seconds() // 60)
+        ago = ("just now" if mins <= 0 else f"{mins} min ago" if mins < 60
+               else f"{mins // 60}h {mins % 60}m ago")
+        st.caption(f"Data last sourced {srcd.strftime('%-I:%M %p')} Central · {ago}")
+    else:
+        st.caption("No data sourced yet today.")
     height = 6200 if mobile else 3200
     components.html(dashboard.html(payload, mobile=mobile), height=height, scrolling=True)
+
+
+# ---------------- V4 (D): historical performance (DM + admin, read-only) ----------------
+_HIST_METRICS = {"Cars": "cars", "Net revenue": "net", "ARO ($/car)": "aro",
+                 "Big 4 attach %": "big4", "LHPC (hrs/car)": "lhpc"}
+_HIST_TARGET = {"aro": ARO_TARGET, "lhpc": LHPC_TARGET, "big4": BIG4_GOAL}
+_HIST_FMT = {"cars": lambda v: f"{v:,.0f}", "net": lambda v: f"${v:,.0f}",
+             "aro": lambda v: f"${v:,.2f}", "big4": lambda v: f"{v:.1f}%", "lhpc": lambda v: f"{v:.2f}"}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _hist_rows(store, daystamp):
+    """~5 weeks of daily rows for one store, cached per day (daystamp = today's date)."""
+    return fetch_days(store, 35)
+
+
+def _history_section(role, user, mobile):
+    st.markdown("---")
+    st.markdown("#### Historical performance — last week vs the 4-week average")
+    opts = list(STORE_CODES) if role == "admin" else list(user["stores"])
+    labels = {s: f"{CITY.get(s, s)} #{s}" for s in opts}
+
+    mlabel = _picker(list(_HIST_METRICS), "Cars", "hist_metric", mobile)
+    metric = _HIST_METRICS[mlabel]
+    default = opts if role == "district" else opts[:5]
+    sel = st.multiselect("Stores", options=opts, default=default,
+                         format_func=lambda s: labels[s], key="hist_stores")
+    if not sel:
+        st.caption("Pick at least one store to chart."); return
+
+    today = dt.datetime.now(CENTRAL).strftime("%Y-%m-%d")
+    try:
+        import plotly.graph_objects as go
+    except Exception:
+        st.info("Charting library unavailable in this deployment."); return
+
+    fig = go.Figure()
+    table = []
+    fmt = _HIST_FMT.get(metric, lambda v: v)
+    for s in sel:
+        series = calc.weekly_series(_hist_rows(s, today), today, metric, weeks=5)
+        if not series:
+            continue
+        xs = [p["label"] for p in series]
+        ys = [p["value"] for p in series]
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=labels[s],
+                                 connectgaps=True))
+        last, base, pct = calc.week_vs_baseline(series)
+        table.append({"Store": labels[s],
+                      "Last week": fmt(last) if last is not None else "—",
+                      "4-wk avg": fmt(base) if base is not None else "—",
+                      "Δ vs 4-wk": (f"{pct:+.1f}%" if pct is not None else "—")})
+    tgt = _HIST_TARGET.get(metric)
+    if tgt is not None:
+        fig.add_hline(y=tgt, line_dash="dot", line_color=MUTE,
+                      annotation_text=f"target {fmt(tgt)}", annotation_position="top left")
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                      yaxis_title=mlabel, xaxis_title=None,
+                      plot_bgcolor="#FFFFFF", paper_bgcolor="rgba(0,0,0,0)")
+    fig.update_xaxes(showgrid=False); fig.update_yaxes(gridcolor="#E2E7EE")
+    st.plotly_chart(fig, use_container_width=True)
+    if table:
+        st.dataframe(table, use_container_width=True, hide_index=True)
+    st.caption("Weekly totals over the last 5 seven-day windows; ARO / Big 4 / LHPC are "
+               "volume-weighted across each week. Baseline = average of the 4 weeks before last week.")
 
 
 def main():
     if "auth" not in st.session_state:
         login_view(); return
     role, code = st.session_state.auth
-    if role == "store":
-        tier, allowed, scope = "store", [code], f"{CITY[code]} · #{code}"
-    elif role == "district":
-        name, ids = DISTRICTS[code]; tier, allowed, scope = "district", ids, f"{name} · {len(ids)} stores"
-    else:
-        tier, allowed, scope = "admin", STORE_CODES, "All Stores · 15"
+    # V4: resolve the current user once for write attribution + scope.
+    user = identity.resolve(role, code)
+    st.session_state["user"] = user
 
     mobile = is_mobile()
     if mobile:
@@ -277,6 +439,12 @@ def main():
         if st.button("Log out", use_container_width=True):
             del st.session_state.auth; st.cache_data.clear(); st.rerun()
 
+    # V4 (A): native scope tabs -> ?scope= deep link -> which payload we render.
+    # Store tier has no control (its scope is fixed). Selection persists across the
+    # auto-refresh because it lives in the URL query param (also fixes a V3 backlog item).
+    scope_str = _scope_controls(role, user, mobile)
+    tier, allowed, scope = identity.resolve_scope(role, user, scope_str)
+
     # fallback guide (only when st.dialog isn't available)
     if not _dialog and st.session_state.get("_guide_open"):
         with st.expander("Store guide", expanded=True):
@@ -285,6 +453,11 @@ def main():
                 st.session_state["_guide_open"] = False; st.rerun()
 
     _dashboard_view(tier, allowed, scope, mobile)
+
+    # V4 (D): historical performance section — DM + admin only, read-only.
+    # Outside the auto-refresh fragment so its metric toggle / store picker behave normally.
+    if role in ("admin", "district"):
+        _history_section(role, user, mobile)
 
 
 if __name__ == "__main__":
