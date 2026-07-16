@@ -82,7 +82,11 @@ def fetch_report_text(session, store):
     page text so the parser (built for the plain-text layout) works unchanged.
     """
     url = REPORT_URL.format(store=store)
-    r = session.get(url, timeout=30)
+    # Cache-buster: a unique query param + no-cache headers force a fresh report each pull.
+    # Guards against AutoPoll / a CDN serving a stale cached snapshot for a store (seen when
+    # one store's report_timestamp stayed frozen while every other store advanced).
+    r = session.get(url, timeout=30, params={"_": int(time.time())},
+                    headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
     r.raise_for_status()
     if "/Account/LogOn" in r.url:
         raise PermissionError("session expired")
@@ -148,10 +152,33 @@ def upsert_supabase(url, key, data, now):
     resp.raise_for_status()
 
 
+# How far behind "now" a report's own timestamp may be before we treat the store's
+# feed as frozen/stale (see report_datetime + the freshness guard in pull_store).
+STALE_REPORT_MAX = dt.timedelta(hours=2)
+
+
+def report_datetime(data):
+    """The full date+time the REPORT itself is stamped with (naive Central), parsed from
+    report_timestamp (e.g. '7/16/2026  07:10 AM'). Used for both the wrong-day guard and
+    the frozen-feed freshness guard."""
+    ts = (data.get("report_timestamp") or "").strip()
+    m = re.match(r"\s*(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})\s*([AaPp][Mm])", ts)
+    if not m:
+        return None
+    mo, da, yr, hh, mm, ap = m.groups()
+    hh = int(hh) % 12 + (12 if ap.upper() == "PM" else 0)
+    try:
+        return dt.datetime(int(yr), int(mo), int(da), hh, int(mm))
+    except ValueError:
+        return None
+
+
 def report_date(data):
-    """The calendar date the REPORT itself is for, parsed from report_timestamp
-    (e.g. '7/15/2026  08:54 AM'). Used to catch a store whose AutoPoll hasn't rolled
-    over to today yet and is still serving yesterday's final report."""
+    """The calendar date the REPORT itself is for. Catches a store whose AutoPoll hasn't
+    rolled over to today yet and is still serving yesterday's final report."""
+    rdt = report_datetime(data)
+    if rdt is not None:
+        return rdt.date()
     ts = (data.get("report_timestamp") or "").strip()
     m = re.match(r"\s*(\d{1,2})/(\d{1,2})/(\d{4})", ts)
     if not m:
@@ -178,10 +205,20 @@ def pull_store(session, store, retries=3):
             # yesterday's cumulative (a big spike + a negative correction next hour). Skip
             # this store this cycle; the next pull (once AutoPoll rolls over) captures it.
             rd = report_date(data)
-            today = dt.datetime.now(CENTRAL).date()
-            if rd is not None and rd != today:
-                raise ValueError(f"stale report dated {rd} (expected {today}); "
+            now = dt.datetime.now(CENTRAL)
+            if rd is not None and rd != now.date():
+                raise ValueError(f"stale report dated {rd} (expected {now.date()}); "
                                  f"AutoPoll not rolled to today yet")
+            # Frozen-feed guard: during open hours a live report's own timestamp advances
+            # every pull. If it lags "now" by more than STALE_REPORT_MAX, this store's feed
+            # is stuck (AutoPoll served a frozen/cached snapshot) — skip it rather than store
+            # a misleading 0-car row. Logged in the run summary; captured once the feed moves.
+            rdt = report_datetime(data)
+            if rdt is not None:
+                lag = now.replace(tzinfo=None) - rdt
+                if lag > STALE_REPORT_MAX:
+                    raise ValueError(f"stale/frozen feed: report is {int(lag.total_seconds()//60)} min "
+                                     f"old (as of {data.get('report_timestamp')}); feed not advancing")
             return data, text
         except Exception as e:
             last = e
