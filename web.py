@@ -1,0 +1,330 @@
+"""V4 admin/DM 'website' view — a data-driven single-page component (embedded HTML/JS).
+
+Render path parallel to dashboard.py (which still serves the store-login view). This one
+is full-width, professional, and interactive: left SVG nav, Overview with a
+ranking/graphs/table toggle + metric sub-toggle fleet bar chart + Big 4-by-store + district
+pills, Store detail with the redesigned metric sections (target line, click-to-expand
+drill-ins, ARO drivers, 4-wk avg shown next to the actual), and Historical (last 7 days +
+today highlighted, hover shows % vs today). No emojis. Blue/red lean, performance coloring.
+
+`html(payload)` returns the component markup; app.py injects it via components.html and
+renders the native targets editor separately (writes stay server-side).
+
+Payload contract (all built in app.py / calc):
+  P = {
+    tier, scopeName, asof, sourced,
+    kpis:{stores,cars,carsPace,net,aro,big4},
+    regions:{name:[ids]},
+    rows:[{id,name,region,cars,net,aro,lhpc,big4,pace,status}],   # overview, one per store
+    detail:{ id: {name,id,region,open,
+                  kpi:{cars,carsNorm,carsPace,aro,aroGap,net,netNorm,netPace,big4,lhpc,
+                       carsStatus,aroStatus,netStatus,big4Status,lhpcStatus},
+                  hours:[...], now:"1p",
+                  cars:{actual:[],est:[],target:[],sofar,est_close,norm,pace,tgt,tgtSrc,wk:[{date,val,capped}]},
+                  net:{...same shape...},
+                  aro:{run:[],sofar,gap,target},
+                  big4:{run:[],pct,units,target,items:[{name,attach,target,units}]},
+                  lhpc:{roll:[],hours:[],day,now,target,variance},
+                  drivers:[{title,status,message,chart:{type,data}}] } },
+    hist:{days:[...], today:"Today", series:[{id,name,color,data:[]}], metric}
+  }
+"""
+import json
+
+
+def html(payload):
+    P = json.dumps(payload).replace("</", "<\\/")
+    return _TMPL.replace("/*__PAYLOAD__*/", P)
+
+
+_TMPL = r"""
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--navy:#14273F;--red:#D0342C;--blue:#2E6FB7;--green:#158A5A;--amber:#B57611;
+ --teal:#0E7490;--purple:#6C4FB6;--ink:#0F172A;--mute:#5B6472;--line:#E2E7EE;
+ --bg:#F4F6F9;--card:#fff;--soft:#F7F9FC;--gbg:#E7F3EC;--rbg:#FBEAE9;--abg:#FBF1DF;}
+*{box-sizing:border-box}
+#root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);font-size:14px}
+.app{display:flex;min-height:640px;background:var(--bg)}
+.side{width:206px;flex:0 0 206px;background:var(--navy);color:#fff;padding:16px 12px;display:flex;flex-direction:column}
+.brand{font-weight:800;font-size:1.05rem;padding:6px 8px}
+.brand small{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:2px}
+.side nav{margin-top:16px;display:flex;flex-direction:column;gap:3px}
+.side nav button{display:flex;align-items:center;gap:10px;background:transparent;border:0;color:#C6D3E4;
+ font-size:.9rem;font-weight:600;padding:10px 12px;border-radius:8px;cursor:pointer;text-align:left}
+.side nav button:hover{background:rgba(255,255,255,.08);color:#fff}
+.side nav button.on{background:#fff;color:var(--navy)}
+.side nav svg{width:17px;height:17px;flex:0 0 17px}
+.side .sfoot{margin-top:auto;color:#8FA2B8;font-size:.72rem;padding:8px}
+.main{flex:1;min-width:0;padding:16px 24px 40px}
+.topbar{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.scopeName{font-size:1.16rem;font-weight:800;letter-spacing:-.3px}
+.meta{margin-left:auto;color:var(--mute);font-size:.78rem;display:flex;gap:14px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;background:#37D08A;display:inline-block;margin-right:5px}
+.view{display:none}.view.on{display:block}
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.pills button{border:1px solid var(--line);background:#fff;color:var(--ink);font-size:.8rem;font-weight:600;padding:6px 13px;border-radius:20px;cursor:pointer}
+.pills button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.seg{display:inline-flex;background:#E7ECF2;border-radius:9px;padding:3px}
+.seg button{border:0;background:transparent;font-size:.8rem;font-weight:700;color:var(--mute);padding:7px 13px;border-radius:7px;cursor:pointer}
+.seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
+h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);font-weight:500;font-size:.8rem;margin-left:8px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.kpi .l{font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800}
+.kpi .v{font-size:1.6rem;font-weight:800;letter-spacing:-1px;margin-top:2px}
+.kpi .d{font-size:.74rem;font-weight:700;margin-top:2px}
+.kpi.bt{border-top:3px solid var(--blue)}.kpi.gt{border-top:3px solid var(--green)}.kpi.at{border-top:3px solid var(--amber)}
+.kpi.tt{border-top:3px solid var(--teal)}.kpi.nt{border-top:3px solid var(--navy)}
+.pos{color:var(--green)}.neg{color:var(--red)}.amb{color:var(--amber)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:13px}
+.scard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;cursor:pointer;transition:box-shadow .12s,transform .12s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.scard:hover{box-shadow:0 8px 22px rgba(15,23,42,.11);transform:translateY(-2px);border-color:#CBD5E1}
+.scard .top{display:flex;justify-content:space-between;align-items:flex-start}
+.scard .nm{font-weight:800;font-size:.96rem}.scard .id{color:var(--mute);font-size:.73rem;font-weight:600}
+.pill{font-size:.72rem;font-weight:800;padding:3px 9px;border-radius:20px}
+.pill.g{background:var(--gbg);color:var(--green)}.pill.r{background:var(--rbg);color:var(--red)}.pill.a{background:var(--abg);color:var(--amber)}
+.mini{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:11px}
+.mini .ml{font-size:.59rem;text-transform:uppercase;color:var(--mute);font-weight:700}.mini .mv{font-size:.92rem;font-weight:800}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:15px}
+.chartbox{position:relative;height:230px}.chartbox.sm{height:150px}.chartbox.tall{height:430px}
+.mhead{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+.acc{width:5px;height:18px;border-radius:3px}.mhead .t{font-weight:800;font-size:1rem}.mhead .n{color:var(--mute);font-size:.8rem}
+.mrow{display:grid;grid-template-columns:320px 1fr;gap:20px}
+.boxes{display:flex;flex-direction:column;gap:10px}
+.box{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--soft)}
+.box .bl{font-size:.62rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:800}
+.box .bsub{font-size:.7rem;color:var(--mute);margin-top:1px}
+.triple{display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;align-items:end;margin-top:6px}
+.triple .big{font-size:1.3rem;font-weight:800;letter-spacing:-.5px}.triple .mid{font-size:1rem;font-weight:800}.triple .cap{font-size:.65rem;color:var(--mute);font-weight:600}
+.clickable{cursor:pointer}.clickable:hover{border-color:#CBD5E1;background:#fff}
+.chev{font-size:.64rem;color:var(--blue);font-weight:800}
+.expand{display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px}.expand.open{display:block}
+.tgt{border-color:#F0C9B8;background:#FBF1EC}.tgt .bl{color:#993C1D}.tgt .val{color:#993C1D;font-size:1.3rem;font-weight:800}
+.badge{background:#F1D6C8;color:#8A3617;border-radius:4px;padding:1px 6px;font-size:.63rem;font-weight:800}
+.legend{display:flex;gap:16px;justify-content:center;margin-bottom:6px;font-size:.72rem;font-weight:700}
+.lg span{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:5px}
+.band{display:grid;grid-template-columns:5fr 5fr 4fr;gap:4px;margin-bottom:6px}
+.band div{font-size:.61rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800;text-align:center;background:var(--soft);border-radius:5px;padding:3px 0}
+.driver{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--soft)}
+.driver .dt{font-weight:800;font-size:.82rem}.driver .dm{font-size:.78rem;margin-top:3px}
+.tag{font-size:.62rem;font-weight:800;padding:2px 7px;border-radius:5px;margin-left:6px}
+.tag.r{background:var(--rbg);color:var(--red)}.tag.a{background:var(--abg);color:var(--amber)}.tag.g{background:var(--gbg);color:var(--green)}
+.crumb{font-size:.8rem;color:var(--mute);margin-bottom:2px}.crumb a{color:var(--blue);cursor:pointer;font-weight:600}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{padding:9px 12px;font-size:.82rem;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{background:var(--soft);color:var(--mute);font-size:.65rem;text-transform:uppercase;letter-spacing:.04em}
+tbody tr{cursor:pointer}tbody tr:hover{background:var(--soft)}tr:last-child td{border-bottom:0}
+.empty{color:var(--mute);font-size:.85rem;padding:22px;text-align:center}
+@media(max-width:820px){.app{flex-direction:column}.side{width:100%;flex-direction:row;overflow:auto}
+ .side .brand,.side .sfoot{display:none}.side nav{flex-direction:row;margin:0}.side nav button{white-space:nowrap}
+ .kpis{grid-template-columns:1fr 1fr}.mrow{grid-template-columns:1fr}}
+</style>
+<script>
+const P=/*__PAYLOAD__*/;
+const C={navy:'#14273F',red:'#D0342C',blue:'#2E6FB7',green:'#158A5A',amber:'#B57611',teal:'#0E7490',purple:'#6C4FB6',mute:'#5B6472',line:'#E2E7EE'};
+const ch={};let OVMODE='rank',OVMETRIC='cars',SEL=(P.rows[0]||{}).id;
+const ICON={overview:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+ detail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>',
+ hist:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>'};
+const fmt={cars:v=>Math.round(v),net:v=>'$'+Math.round(v).toLocaleString(),aro:v=>'$'+Math.round(v),big4:v=>Math.round(v)+'%',lhpc:v=>(+v).toFixed(2)};
+const stCol={g:C.green,a:C.amber,r:C.red,flat:C.mute};
+function pc(v){return v==null?'—':((v>=0?'+':'')+(+v).toFixed(1)+'%');}
+function scls(s){return s==='g'?'pos':(s==='r'?'neg':(s==='a'?'amb':''));}
+function mk(id,cfg){const el=document.getElementById(id);if(!el)return;if(ch[id])ch[id].destroy();ch[id]=new Chart(el,cfg);}
+const G={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},elements:{point:{radius:0}}};
+
+function shell(){
+ document.getElementById('root').innerHTML=`
+ <div class="app">
+  <aside class="side">
+   <div class="brand">VantEdge Auto<small>Take 5 · Scorecard</small></div>
+   <nav>
+    <button data-v="overview" class="on" onclick="nav('overview')">${ICON.overview}Overview</button>
+    <button data-v="detail" onclick="nav('detail')">${ICON.detail}Store detail</button>
+    <button data-v="hist" onclick="nav('hist')">${ICON.hist}Historical</button>
+   </nav>
+   <div class="sfoot">${P.tier==='admin'?'Admin view':'District view'}</div>
+  </aside>
+  <main class="main">
+   <div class="topbar"><div class="scopeName" id="scopeName">${P.scopeName||''}</div>
+    <div class="meta"><span><span class="dot"></span>live · ${P.asof||''}</span><span>${P.sourced||''}</span></div></div>
+   <section class="view on" id="v_overview"></section>
+   <section class="view" id="v_detail"></section>
+   <section class="view" id="v_hist"></section>
+  </main>
+ </div>`;
+}
+function nav(v){document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='v_'+v));
+ document.querySelectorAll('.side nav button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')===v));
+ render(v);}
+function render(v){if(v==='overview')overview();else if(v==='detail')detail();else if(v==='hist')hist();}
+
+/* ---------- overview ---------- */
+function overview(){const k=P.kpis||{};
+ document.getElementById('v_overview').innerHTML=`
+  <div class="pills">${['All'].concat(Object.keys(P.regions||{})).map((r,i)=>`<button class="${i===0?'on':''}" onclick="regfilter(this,'${r}')">${r==='All'?('All · '+P.rows.length):r}</button>`).join('')}</div>
+  <div class="kpis">
+   <div class="kpi nt"><div class="l">Stores reporting</div><div class="v">${k.stores||P.rows.length}</div><div class="d">live</div></div>
+   <div class="kpi bt"><div class="l">Total cars</div><div class="v">${k.cars!=null?Math.round(k.cars):'—'}</div><div class="d ${k.carsPace>=0?'pos':'neg'}">${pc(k.carsPace)} vs 4-wk</div></div>
+   <div class="kpi gt"><div class="l">Total net</div><div class="v">${k.net!=null?fmt.net(k.net):'—'}</div><div class="d">so far</div></div>
+   <div class="kpi at"><div class="l">Avg ARO</div><div class="v">${k.aro!=null?fmt.aro(k.aro):'—'}</div><div class="d ${k.aro>=125?'pos':'neg'}">vs $125</div></div>
+   <div class="kpi tt"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4>=53?'pos':'amb'}">goal 53%</div></div>
+  </div>
+  <div class="row" style="margin-top:16px">
+   <div class="seg"><button class="on" onclick="ovv(this,'rank')">Store ranking</button><button onclick="ovv(this,'graph')">Graphs</button><button onclick="ovv(this,'table')">Table</button></div>
+   <div class="seg" id="ovm" style="display:none">${['cars','big4','aro','net','lhpc'].map((m,i)=>`<button class="${i===0?'on':''}" onclick="ovmet(this,'${m}')">${m==='aro'?'ARO':m==='lhpc'?'LHPC':m==='big4'?'Big 4':m[0].toUpperCase()+m.slice(1)}</button>`).join('')}</div>
+   <span class="sub" id="ovmNote" style="display:none">current hour · click a bar to open the store</span>
+  </div>
+  <div id="ov_body"></div>
+  <h2 class="sh">Big 4 by store <span class="sub">attach % of cars · goal line 53%</span></h2>
+  <div class="panel"><div class="chartbox tall"><canvas id="c_b4store"></canvas></div></div>`;
+ ovBody();b4store();
+}
+let REGION='All';
+function regfilter(b,r){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');REGION=r;ovBody();b4store();}
+function ovv(b,m){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');OVMODE=m;
+ document.getElementById('ovm').style.display=m==='graph'?'inline-flex':'none';
+ document.getElementById('ovmNote').style.display=m==='graph'?'inline':'none';ovBody();}
+function ovmet(b,m){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');OVMETRIC=m;ovBody();}
+function rowsF(){return P.rows.filter(r=>REGION==='All'||(P.regions[REGION]||[]).includes(r.id));}
+function ovBody(){const el=document.getElementById('ov_body');const R=rowsF();
+ if(OVMODE==='rank'){el.innerHTML='<div class="cards">'+R.map(s=>`
+   <div class="scard" onclick="openStore('${s.id}')"><div class="top"><div><div class="nm">${s.name}</div><div class="id">#${s.id}</div></div><span class="pill ${s.status||'a'}">${pc(s.pace)}</span></div>
+   <div class="mini"><div><div class="ml">Cars</div><div class="mv">${s.cars!=null?s.cars:'—'}</div></div><div><div class="ml">ARO</div><div class="mv">${s.aro!=null?'$'+Math.round(s.aro):'—'}</div></div><div><div class="ml">Big 4</div><div class="mv">${s.big4!=null?Math.round(s.big4)+'%':'—'}</div></div><div><div class="ml">LHPC</div><div class="mv">${s.lhpc!=null?(+s.lhpc).toFixed(2):'—'}</div></div></div></div>`).join('')+'</div>';}
+ else if(OVMODE==='table'){el.innerHTML='<table><thead><tr><th>Store</th><th>Cars</th><th>Net</th><th>ARO</th><th>Big 4</th><th>LHPC</th><th>vs 4-wk</th></tr></thead><tbody>'+R.map(s=>`<tr onclick="openStore('${s.id}')"><td>${s.name} #${s.id}</td><td>${s.cars??'—'}</td><td>${s.net!=null?'$'+Math.round(s.net).toLocaleString():'—'}</td><td>${s.aro!=null?'$'+Math.round(s.aro):'—'}</td><td>${s.big4!=null?Math.round(s.big4)+'%':'—'}</td><td>${s.lhpc!=null?(+s.lhpc).toFixed(2):'—'}</td><td class="${scls(s.status)}">${pc(s.pace)}</td></tr>`).join('')+'</tbody></table>';}
+ else{el.innerHTML='<div class="panel"><div class="chartbox tall"><canvas id="c_fleet"></canvas></div></div>';fleet();}
+ fitLater();
+}
+function fleet(){const m=OVMETRIC,goal={big4:53,aro:125,lhpc:1.10}[m]||null;
+ const arr=rowsF().map(s=>({n:s.name+' '+s.id,v:s[m],id:s.id})).filter(a=>a.v!=null).sort((a,b)=>m==='lhpc'?a.v-b.v:b.v-a.v);
+ mk('c_fleet',{type:'bar',data:{labels:arr.map(a=>a.n),datasets:[{data:arr.map(a=>a.v),
+   backgroundColor:arr.map(a=>goal?((m==='lhpc'?a.v<=goal:a.v>=goal)?C.green:((m==='lhpc'?a.v<=goal*1.25:a.v>=goal*0.6)?C.amber:C.red)):C.blue),borderRadius:4}]},
+  options:{...G,indexAxis:'y',onClick:(e,el)=>{if(el[0])openStore(arr[el[0].index].id);},
+   plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt[m](c.parsed.x)}}},
+   scales:{x:{grid:{color:C.line}},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+}
+function b4store(){const arr=rowsF().map(s=>({n:s.name+' '+s.id,v:s.big4,id:s.id})).filter(a=>a.v!=null).sort((a,b)=>a.v-b.v);
+ mk('c_b4store',{type:'bar',data:{labels:arr.map(a=>a.n),datasets:[{data:arr.map(a=>a.v),backgroundColor:arr.map(a=>a.v>=53?C.green:(a.v>=32?C.amber:C.red)),borderRadius:4}]},
+  options:{...G,indexAxis:'y',onClick:(e,el)=>{if(el[0])openStore(arr[el[0].index].id);},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Big 4: '+Math.round(c.parsed.x)+'%'}}},scales:{x:{grid:{color:C.line},suggestedMax:100},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+}
+function openStore(id){SEL=id;nav('detail');document.querySelectorAll('.side nav button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')==='detail'));}
+
+/* ---------- detail ---------- */
+function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('v_detail');
+ if(!d){el.innerHTML='<div class="empty">Select a store from Overview.</div>';return;}
+ const k=d.kpi;
+ el.innerHTML=`<div class="crumb"><a onclick="nav('overview')">Overview</a> › <b>${d.name} · #${d.id}</b></div>
+  <div class="row"><div class="scopeName">${d.name} <span class="sub">#${d.id} · ${d.region||''} · opened ${d.open||'—'}</span></div></div>
+  <div class="kpis">
+   <div class="kpi bt"><div class="l">Cars</div><div class="v">${k.cars}</div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} · 4-wk ${k.carsNorm??'—'}</div></div>
+   <div class="kpi at"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
+   <div class="kpi gt"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()}</div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} · 4-wk $${k.netNorm??'—'}</div></div>
+   <div class="kpi tt"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
+   <div class="kpi nt"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
+  </div>
+  ${cumSection('Cars',d.cars,C.blue,'cars',d)}
+  ${aroSection(d)}
+  ${cumSection('Net revenue',d.net,C.green,'net',d)}
+  ${big4Section(d)}
+  ${lhpcSection(d)}`;
+ drawDetail(d);
+}
+function band(){return '<div class="band"><div>Morning</div><div>Afternoon</div><div>Evening</div></div>';}
+function cumSection(title,m,color,key,d){
+ const tgtSrc=(P.tier==='admin'||P.tier==='district')&&m.tgtSrc?`<span class="badge">${m.tgtSrc}</span>`:'';
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${color}"></div><span class="t">${title}</span><span class="n">cumulative today vs projected close</span></div>
+  <div class="mrow"><div class="boxes">
+   <div class="box clickable" onclick="tog('${key}wk')"><div class="bl">Today · as of ${d.now}</div>
+    <div class="triple"><div><div class="big">${key==='net'?'$'+Math.round(m.sofar).toLocaleString():Math.round(m.sofar)}</div><div class="cap">so far</div></div>
+     <div><div class="mid ${scls(m.status)}">${pc(m.pace)}</div><div class="cap">vs 4-wk</div></div>
+     <div><div class="big">${key==='net'?'$'+Math.round(m.norm||0).toLocaleString():Math.round(m.norm||0)}</div><div class="cap">4-wk avg <span class="chev">▾</span></div></div></div>
+    <div class="expand" id="${key}wk"><div class="sub">Last 4 same-weekdays by this hour + today</div><div class="chartbox sm"><canvas id="c_${key}wk"></canvas></div></div></div>
+   <div class="box"><div class="bl">Projected finish</div><div class="bsub">pace-scaled · excludes boost</div><div class="triple" style="grid-template-columns:1fr"><div class="big" style="color:${color}">${key==='net'?'$'+Math.round(m.est_close).toLocaleString():Math.round(m.est_close)}</div></div></div>
+   <div class="box tgt"><div class="bl">Target</div><div class="bsub">${m.tgt!=null?tgtSrc:'—'}</div><div class="val">${m.tgt!=null?(key==='net'?'$'+Math.round(m.tgt).toLocaleString():Math.round(m.tgt)):'—'}</div></div>
+  </div>
+  <div><div class="legend"><span class="lg"><span style="background:${C.blue}"></span>Actual</span><span class="lg" style="color:${C.green}"><span style="border-top:2px dashed ${C.green};background:none;height:0"></span>Projected</span><span class="lg" style="color:${C.red}"><span style="border-top:2px dotted ${C.red};background:none;height:0"></span>Target</span></div>
+   ${band()}<div class="chartbox"><canvas id="c_${key}"></canvas></div></div></div></div>`;
+}
+function aroSection(d){const a=d.aro,dr=d.drivers||[];
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.amber}"></div><span class="t">ARO — average repair order</span><span class="n">running revenue per car vs target</span></div>
+  <div class="mrow"><div class="boxes">
+   <div class="box"><div class="bl">Today</div><div class="triple"><div><div class="big">$${Math.round(a.sofar||0)}</div><div class="cap">so far</div></div><div><div class="mid ${a.gap>=0?'pos':'neg'}">${pc(a.gap)}</div><div class="cap">gap</div></div><div><div class="big">$${Math.round(a.target||125)}</div><div class="cap">target</div></div></div></div>
+   ${dr.slice(0,2).map((x,i)=>`<div class="driver clickable" onclick="tog('arod${i}')"><div class="dt">${x.title}<span class="tag ${x.status}">driver</span> <span class="chev">▾</span></div><div class="dm">${x.message}</div><div class="expand" id="arod${i}"><div class="chartbox sm"><canvas id="c_arod${i}"></canvas></div></div></div>`).join('')||'<div class="box"><div class="bsub">No standout driver — ARO tracking normal.</div></div>'}
+  </div><div><div class="chartbox" style="height:300px"><canvas id="c_aro"></canvas></div></div></div></div>`;
+}
+function big4Section(d){const b=d.big4;
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.teal}"></div><span class="t">Big 4 attachment</span><span class="n">attach % of cars vs the 53% goal</span></div>
+  <div class="mrow"><div class="boxes"><div class="box"><div class="bl">Attach</div><div class="triple"><div><div class="big">${Math.round(b.pct||0)}%</div><div class="cap">of cars</div></div><div><div class="mid">${b.target}%</div><div class="cap">goal</div></div><div><div class="big clickable" onclick="tog('b4u')">${b.units}<span class="chev"> ▾</span></div><div class="cap">units</div></div></div><div class="expand" id="b4u"><div class="sub">Units per item</div><div class="chartbox sm"><canvas id="c_b4units"></canvas></div></div></div></div>
+   <div><div class="chartbox" style="height:200px"><canvas id="c_big4"></canvas></div></div></div></div>`;
+}
+function lhpcSection(d){const l=d.lhpc;
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.purple}"></div><span class="t">Labor · LHPC</span><span class="n">rolling labor per car vs target</span></div>
+  <div class="mrow"><div class="boxes"><div class="box clickable" onclick="tog('lhx')"><div class="bl">Rolling <span class="chev">▾</span></div><div class="triple"><div><div class="big">${(+l.day).toFixed(2)}</div><div class="cap">rolling</div></div><div><div class="mid ${l.variance<=0?'pos':'neg'}">${l.variance>0?'+':''}${(+l.variance).toFixed(2)}</div><div class="cap">variance</div></div><div><div class="big">${(+l.target).toFixed(2)}</div><div class="cap">target</div></div></div><div class="expand" id="lhx"><div class="sub">Rolling = cumulative labor hours ÷ cumulative cars for the day. Lower is leaner.</div></div></div></div>
+   <div><div class="chartbox" style="height:196px"><canvas id="c_lhpc"></canvas></div></div></div></div>`;
+}
+function tog(id){const e=document.getElementById(id);if(!e)return;e.classList.toggle('open');const d=(P.detail||{})[SEL];if(e.classList.contains('open'))drawDetail(d);fitLater();}
+
+function lineTgt(v){return {type:'line',label:'Target',data:v,borderColor:C.red,borderDash:[2,3],borderWidth:1.6,pointRadius:0};}
+function drawDetail(d){const L=d.hours;
+ ['cars','net'].forEach(key=>{const m=d[key];if(!document.getElementById('c_'+key))return;
+  mk('c_'+key,{data:{labels:L,datasets:[
+   {type:'line',label:'Actual',data:m.actual,borderColor:C.blue,backgroundColor:'rgba(46,111,183,.10)',fill:true,borderWidth:2.6,tension:.35},
+   {type:'line',label:'Projected',data:m.est,borderColor:C.green,borderDash:[6,4],borderWidth:2.2,tension:.35},
+   m.target?lineTgt(m.target):{data:[]}]},
+   options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:C.line}}}}});
+  const wk=m.wk||[];const wl=wk.map(x=>x.date).concat(['Today']);const wv=wk.map(x=>x.val).concat([m.sofar]);
+  if(document.getElementById('c_'+key+'wk'))mk('c_'+key+'wk',{type:'bar',data:{labels:wl,datasets:[{data:wv,backgroundColor:wl.map((_,i)=>i===wl.length-1?C.blue:'#B5D4F4')}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
+ });
+ const a=d.aro;if(document.getElementById('c_aro'))mk('c_aro',{data:{labels:L,datasets:[
+   {type:'line',label:'ARO',data:a.run,borderColor:C.blue,backgroundColor:'rgba(46,111,183,.08)',fill:true,borderWidth:2.4,tension:.35},
+   lineTgt(L.map(()=>a.target||125))]},options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{grid:{color:C.line}}}}});
+ (d.drivers||[]).slice(0,2).forEach((x,i)=>{const cv=document.getElementById('c_arod'+i);if(!cv)return;const c=x.chart||{};
+  if(c.type==='bars')mk('c_arod'+i,{type:'bar',data:{labels:(c.data||[]).map(z=>z.name),datasets:[{label:'attach',data:(c.data||[]).map(z=>z.attach),backgroundColor:C.teal},{label:'target',data:(c.data||[]).map(z=>z.target),backgroundColor:C.line}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
+  else if(c.type==='pair')mk('c_arod'+i,{type:'bar',data:{labels:(c.data||[]).map(z=>z.name),datasets:[{data:(c.data||[]).map(z=>z.val),backgroundColor:C.amber}]},options:{...G,indexAxis:'y',scales:{x:{display:false},y:{grid:{display:false}}}}});
+  else mk('c_arod'+i,{type:'bar',data:{labels:['now','target'],datasets:[{data:[(c.data||{}).val||0,(c.data||{}).target||0],backgroundColor:[C.amber,C.line]}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
+ });
+ const b=d.big4;if(document.getElementById('c_big4'))mk('c_big4',{data:{labels:L,datasets:[
+   {type:'line',label:'Big 4 %',data:b.run,borderColor:C.teal,backgroundColor:'rgba(14,116,144,.10)',fill:true,borderWidth:2.4,tension:.35},
+   {type:'line',label:'goal',data:L.map(()=>b.target),borderColor:C.green,borderDash:[4,3],borderWidth:1.4,pointRadius:0}]},options:{...G,scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:C.line}}}}});
+ if(document.getElementById('c_b4units'))mk('c_b4units',{type:'bar',data:{labels:(b.items||[]).map(x=>x.name),datasets:[{data:(b.items||[]).map(x=>x.units||0),backgroundColor:C.teal}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
+ const l=d.lhpc;if(document.getElementById('c_lhpc'))mk('c_lhpc',{data:{labels:L,datasets:[
+   {type:'bar',label:'hours',data:l.hours,backgroundColor:'rgba(108,79,182,.18)',yAxisID:'y1'},
+   {type:'line',label:'rolling',data:l.roll,borderColor:C.purple,borderWidth:2.4,tension:.35,yAxisID:'y'},
+   {type:'line',label:'target',data:L.map(()=>l.target),borderColor:C.red,borderDash:[2,3],borderWidth:1.4,yAxisID:'y',pointRadius:0}]},
+   options:{...G,scales:{x:{grid:{display:false}},y:{position:'left',min:0,max:5,grid:{color:C.line}},y1:{position:'right',min:0,grid:{display:false}}}}});
+}
+
+/* ---------- historical ---------- */
+const HKEY={Cars:'cars',Net:'net',ARO:'aro','Big 4':'big4',LHPC:'lhpc'};
+let HMETRIC='cars',HSTORES=null;
+function hist(){const h=P.hist||{stores:[],days:[]};const el=document.getElementById('v_hist');
+ if(HSTORES===null)HSTORES=(h.stores||[]).slice(0,Math.min(3,(h.stores||[]).length)).map(s=>s.id);
+ el.innerHTML=`<div class="scopeName">Historical performance <span class="sub">last 7 days + today · hover a day for its gap vs today</span></div>
+  <div class="row"><div class="seg" id="hmetric">${Object.keys(HKEY).map(m=>`<button class="${HKEY[m]===HMETRIC?'on':''}" onclick="hm(this,'${HKEY[m]}')">${m}</button>`).join('')}</div></div>
+  <div class="pills" id="hchips">${(h.stores||[]).map(s=>`<button class="${HSTORES.includes(s.id)?'on':''}" onclick="hchip('${s.id}')">${s.name}</button>`).join('')}</div>
+  <div class="panel"><div class="chartbox" style="height:320px"><canvas id="c_hist"></canvas></div></div>
+  <h2 class="sh">Selected stores <span class="sub">last-week average vs today</span></h2>
+  <div id="htab"></div>`;
+ drawHist();fitLater();
+}
+function hm(b,m){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');HMETRIC=m;drawHist();}
+function hchip(id){const i=HSTORES.indexOf(id);if(i>=0)HSTORES.splice(i,1);else HSTORES.push(id);hist();}
+function drawHist(){const h=P.hist||{stores:[],days:[]};const sel=(h.stores||[]).filter(s=>HSTORES.includes(s.id));
+ if(!document.getElementById('c_hist'))return;
+ if(!sel.length){if(ch['c_hist'])ch['c_hist'].destroy();document.getElementById('htab').innerHTML='<div class="empty">Select at least one store.</div>';return;}
+ const days=(h.days||[]).concat([h.today||'Today']);
+ const box={id:'box',afterDraw:c=>{const{ctx,chartArea:{top,bottom},scales:{x}}=c;const p=x.getPixelForValue(days[days.length-1]);ctx.save();ctx.fillStyle='rgba(46,111,183,.10)';ctx.strokeStyle='rgba(46,111,183,.55)';ctx.lineWidth=1.5;ctx.fillRect(p-24,top,48,bottom-top);ctx.strokeRect(p-24,top,48,bottom-top);ctx.restore();}};
+ mk('c_hist',{type:'line',data:{labels:days,datasets:sel.map(s=>({label:s.name,data:s.metrics[HMETRIC],borderColor:s.color,borderWidth:2.4,tension:.35,spanGaps:true,pointRadius:days.map((d,i)=>i===days.length-1?5:3),pointBackgroundColor:s.color}))},
+  options:{...G,plugins:{legend:{display:true,position:'top',align:'end'},tooltip:{callbacks:{label:c=>{const arr=c.dataset.data;const t=arr[arr.length-1];const df=t?(((c.parsed.y-t)/t)*100).toFixed(0):0;return c.dataset.label+': '+(c.parsed.y==null?'—':Math.round(c.parsed.y))+' ('+(df>=0?'+':'')+df+'% vs today)';}}}},scales:{x:{grid:{display:false}},y:{grid:{color:C.line}}}},plugins:[box]});
+ document.getElementById('htab').innerHTML='<table><thead><tr><th>Store</th><th>Last-week avg</th><th>Today</th><th>Δ vs last wk</th></tr></thead><tbody>'+sel.map(s=>{const arr=s.metrics[HMETRIC];const t=arr[arr.length-1];const prev=arr.slice(0,-1).filter(v=>v!=null);const avg=prev.length?prev.reduce((a,b)=>a+b,0)/prev.length:0;const df=avg?(((t-avg)/avg)*100).toFixed(0):0;return `<tr><td>${s.name}</td><td>${Math.round(avg)}</td><td>${t==null?'—':Math.round(t)}</td><td class="${df>=0?'pos':'neg'}">${df>=0?'+':''}${df}%</td></tr>`;}).join('')+'</tbody></table>';
+}
+function fit(){try{if(window.frameElement){window.frameElement.style.height=Math.max(680,document.documentElement.scrollHeight+8)+'px';}}catch(e){}}
+function fitLater(){setTimeout(fit,90);}
+const _render=render;render=function(v){_render(v);fitLater();};
+shell();overview();fitLater();
+</script>
+"""

@@ -18,7 +18,7 @@ import streamlit.components.v1 as components
 from config import (BRAND, CENTRAL, STORE_CODES, CITY, REGIONS, DISTRICTS,
                     HOURS, NAVY, GREEN, RED, AMBER, PURPLE, MUTE, SCORECARD_DAYS,
                     ARO_TARGET, LHPC_TARGET, BIG4_GOAL)
-import calc, dashboard, scorecard_pdf, identity, datastore
+import calc, dashboard, scorecard_pdf, identity, datastore, web
 from datasource import fetch_today, fetch_history, fetch_days, healthcheck
 from config import BIG4_TARGETS
 
@@ -264,14 +264,115 @@ else:
 _fragment = getattr(st, "fragment", None) or getattr(st, "experimental_fragment")
 
 
+# ---------------- V4 (B-3): admin/DM website payload ----------------
+_WEB_PALETTE = [NAVY, "#2E6FB7", "#158A5A", "#B57611", PURPLE, RED, "#0E7490", "#B45309",
+                "#7C3AED", "#0891B2", "#CA8A04", "#BE185D", "#15803D", "#1D4ED8", "#9A3412"]
+
+
+def _target_curve(tgt, n):
+    """Linear ramp from 0 to the day target across the open hours — the red target line."""
+    if tgt is None or not n:
+        return []
+    return [round(tgt * (i + 1) / n, 2) for i in range(n)]
+
+
+def _web_detail(sp):
+    """Map a calc.build_store payload into the exact shape web.py's detail view expects."""
+    n = len(sp["hours"]); s = sp["status"]; a = sp["aro"]; b = sp["big4"]; l = sp["lhpc"]
+    def cum(d):
+        return {"actual": d["actual"], "est": d["est"], "target": _target_curve(d.get("tgt"), n),
+                "sofar": d["sofar"], "est_close": d["est_close"], "norm": d.get("norm"),
+                "pace": d.get("pace_pct"), "status": calc.st_pace(d.get("pace_pct")),
+                "tgt": d.get("tgt"), "tgtSrc": d.get("tgtSrc"), "wk": d.get("wk", [])}
+    return {"name": sp["name"], "id": sp["id"], "region": sp.get("region", ""), "open": sp.get("open", ""),
+            "now": sp["now"], "hours": sp["hours"],
+            "kpi": {"cars": round(sp["cars"]["sofar"]), "carsNorm": sp["cars"].get("norm"),
+                    "carsPace": sp["cars"].get("pace_pct"),
+                    "aro": a.get("sofar") or 0, "aroGap": a.get("gap_pct"),
+                    "net": round(sp["net"]["sofar"]), "netNorm": sp["net"].get("norm"),
+                    "netPace": sp["net"].get("pace_pct"),
+                    "big4": b.get("pct") or 0, "lhpc": l.get("day") or 0,
+                    "carsStatus": s["cars"], "aroStatus": s["aro"], "netStatus": s["net"],
+                    "big4Status": s["big4"], "lhpcStatus": s["lhpc"]},
+            "cars": cum(sp["cars"]), "net": cum(sp["net"]),
+            "aro": {"run": a["run"], "sofar": a.get("sofar") or 0, "gap": a.get("gap_pct"),
+                    "target": a.get("target") or 125},
+            "big4": {"run": b["run"], "pct": b.get("pct") or 0, "units": b.get("units") or 0,
+                     "target": b.get("target"), "items": b.get("items", [])},
+            "lhpc": {"roll": l["roll"], "hours": l["hours"], "day": l.get("day") or 0,
+                     "now": l.get("now"), "target": l.get("target"), "variance": l.get("variance")},
+            "drivers": a.get("drivers", [])}
+
+
+@st.cache_data(ttl=300, show_spinner="Loading dashboard…")
+def build_web_payload(tier, allowed, scope_label, stamp):
+    now = dt.datetime.now(CENTRAL)
+    try:
+        tgts = datastore.get_targets()
+    except Exception:
+        tgts = {}
+    def _pull(s):
+        return s, fetch_today(s), fetch_history(s), fetch_days(s, 12)
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        fetched = list(ex.map(_pull, allowed))
+    today = now.strftime("%Y-%m-%d")
+    dates = [(now.date() - dt.timedelta(days=k)).isoformat() for k in range(7, 0, -1)]
+    labels = [dt.date.fromisoformat(d).strftime("%-m/%-d") for d in dates]
+    rows, detail, hstores, newest, idx = [], {}, [], None, 0
+    for s, td, hist, daily in fetched:
+        try:
+            sp = calc.build_store(s, CITY[s], region_of(s), td, hist, now, tgts.get(s))
+            ar = calc.build_admin_row(s, CITY[s], td, hist, now)
+        except Exception as e:
+            print(f"[web] store {s}: {type(e).__name__}: {e}"); continue
+        rows.append({"id": s, "name": CITY[s], "region": region_of(s), "cars": ar["cars"],
+                     "net": ar["net"], "aro": ar["aro"], "lhpc": ar["lhpc"], "big4": ar["big4"],
+                     "pace": ar["pace"], "status": calc.st_pace(ar["pace"])})
+        detail[s] = _web_detail(sp)
+        for r in td:
+            ts = _parse_ts(r.get("pull_time"))
+            if ts and (newest is None or ts > newest):
+                newest = ts
+        summ = {x["date"]: x for x in calc.days_back_summaries(daily, 14, today) if x}
+        live = {"cars": sp["cars"]["sofar"], "net": sp["net"]["sofar"], "aro": sp["aro"].get("sofar"),
+                "big4": sp["big4"].get("pct"), "lhpc": sp["lhpc"].get("day")}
+        metrics = {k: [(summ.get(d) or {}).get(k) for d in dates] + [live[k]]
+                   for k in ("cars", "net", "aro", "big4", "lhpc")}
+        hstores.append({"id": s, "name": f"{CITY[s]} {s}",
+                        "color": _WEB_PALETTE[idx % len(_WEB_PALETTE)], "metrics": metrics}); idx += 1
+    liveR = [r for r in rows if r["cars"] is not None]
+    tc = sum(r["cars"] for r in liveR); tn = sum(r["net"] or 0 for r in liveR)
+    b4R = [r for r in liveR if r["big4"] is not None and r["cars"]]
+    b4 = (sum(r["big4"] * r["cars"] for r in b4R) / sum(r["cars"] for r in b4R)) if b4R else None
+    paced = [r["pace"] for r in liveR if r["pace"] is not None]
+    kpis = {"stores": len(rows), "cars": tc, "carsPace": round(sum(paced) / len(paced), 1) if paced else None,
+            "net": tn, "aro": round(tn / tc, 1) if tc else None, "big4": round(b4, 1) if b4 is not None else None}
+    sourced = ""
+    if newest:
+        srcd = dt.datetime.fromtimestamp(newest.timestamp(), CENTRAL)
+        mins = int((now - srcd).total_seconds() // 60)
+        sourced = f"sourced {srcd.strftime('%-I:%M %p')} · {'just now' if mins <= 0 else str(mins) + 'm ago'}"
+    regions = (REGIONS if tier == "admin"
+               else {k: v for k, v in REGIONS.items() if any(x in allowed for x in v)})
+    return {"tier": tier, "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
+            "sourced": sourced, "kpis": kpis, "regions": regions, "rows": rows, "detail": detail,
+            "hist": {"days": labels, "today": "Today", "stores": hstores, "metric": "cars"}}
+
+
 # run_every=600 (10 min): the scraper is hourly, so this catches a new pull within
 # ~10 min while staying cheap. NOTE: st.fragment only supports a fixed INTERVAL, not a
 # wall-clock time, so we can't literally fire "5 min after the scraper"; the freshness
-# line below shows the true last-sourced time regardless, so any staleness is visible.
+# line/label shows the true last-sourced time regardless, so any staleness is visible.
 @_fragment(run_every=600)
 def _dashboard_view(tier, allowed, scope, mobile):
     now = dt.datetime.now(CENTRAL)
     stamp = now.strftime("%Y-%m-%d-%H-%M")
+    # V4 (B-3): admin & DM get the full-width website component (self-fitting height).
+    if tier in ("admin", "district"):
+        payload = build_web_payload(tier, allowed, scope, stamp)
+        components.html(web.html(payload), height=900, scrolling=True)
+        return
+    # store-login view — unchanged embedded dashboard.
     payload = build_payload(tier, allowed, scope, stamp)
     ep = payload.get("sourced_epoch")
     if ep:
@@ -377,7 +478,7 @@ def _targets_editor(user):
                             use_container_width=True, disabled=["Store"],
                             column_config={"_id": None})
     name = st.text_input("Your name (saved with each change)", key="tgt_name",
-                         placeholder="e.g. Sam R")
+                         placeholder="John Doe")
     if st.button("Save targets", type="primary"):
         who = identity.attribution(user, name)
         edits = datastore.target_edits(cur, edited.to_dict("records"), _TGT_FIELDS)
@@ -404,6 +505,11 @@ def main():
     if mobile:
         st.markdown("<style>.stButton>button{padding:.4rem .35rem;font-size:.82rem;min-height:0}"
                     "div[data-testid='stHorizontalBlock']{gap:.4rem}</style>", unsafe_allow_html=True)
+    # V4: admin/DM run the full-width website component, so trim the page gutters to near-0
+    # (the component supplies its own ~24px internal padding). Store view stays as-is.
+    elif role in ("admin", "district"):
+        st.markdown("<style>.block-container{padding:.4rem .6rem 0!important;max-width:100%!important}</style>",
+                    unsafe_allow_html=True)
 
     ok, msg = healthcheck()
     if not ok:
@@ -451,16 +557,12 @@ def main():
 
     _dashboard_view(tier, allowed, scope, mobile)
 
-    # V4 (B-2): admin targets editor — only on the admin overview (not when drilled into
-    # a single store), since it edits all stores. role stays 'admin' but tier flips to
-    # 'store' on a ?scope=store drill-in.
+    # V4 (B-3): the admin/DM website component now includes Historical, so the old native
+    # _history_section is no longer called (kept in source for reference).
+    # V4 (B-2): admin targets editor — native, below the component (writes stay server-side).
+    # Only on the admin overview, not a single-store drill-in.
     if role == "admin" and tier == "admin":
         _targets_editor(user)
-
-    # V4 (D): historical performance section — DM + admin only, read-only.
-    # Outside the auto-refresh fragment so its metric toggle / store picker behave normally.
-    if role in ("admin", "district"):
-        _history_section(role, user, mobile)
 
 
 if __name__ == "__main__":

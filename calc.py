@@ -249,7 +249,7 @@ def build_drivers(weekday, cars, aro, net, big4, lhpc):
     return [{"t":t,"st":s,"m":m,"s":so} for (t,s,m,so,_) in out]
 
 # ---------- full builders ----------
-def build_store(store, city, region, today_rows, hist, now):
+def build_store(store, city, region, today_rows, hist, now, targets=None):
     weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1))
     now_hour=min(max(now.hour,o),c)
     latest=today_rows[-1] if today_rows else {}
@@ -262,6 +262,25 @@ def build_store(store, city, region, today_rows, hist, now):
     diff=differentials(latest.get("line_items"))
     dcars=latest.get("cars") or 0
     diff["pct"]=round(diff["units"]/dcars*100,1) if dcars else None
+    # V4 (B-3): targets, drill-in constituents, drivers. `targets=None` reproduces the flat
+    # defaults exactly, so the store-login view (which passes no targets) is unchanged.
+    cars["wk"]=wk_norm_at_hour(hist,weekday,"cars",now_hour,td)["days"]
+    net["wk"] =wk_norm_at_hour(hist,weekday,"net_sales",now_hour,td)["days"]
+    cars_fn=wk_norm_at_hour(hist,weekday,"cars",c,td)["avg"]
+    net_fn =wk_norm_at_hour(hist,weekday,"net_sales",c,td)["avg"]
+    tg=resolve_targets(targets,cars_fn,net_fn)
+    cars["tgt"]=tg["cars"]["value"]; cars["tgtSrc"]=tg["cars"]["source"]
+    net["tgt"]=tg["net"]["value"];   net["tgtSrc"]=tg["net"]["source"]
+    aro["target"]=tg["aro"]["value"]; aro["tgtSrc"]=tg["aro"]["source"]
+    if aro["sofar"]: aro["gap_pct"]=round((aro["sofar"]/tg["aro"]["value"]-1)*100,1)
+    bb=latest.get("big4") or {}
+    for it in big4["items"]:
+        it["units"]=(bb.get(it["name"]) or {}).get("units") or 0
+        it["target"]=tg["big4"]["items"].get(it["name"],it["target"])
+    big4["target"]=tg["big4"]["goal"]
+    lhpc["target"]=tg["lhpc"]["value"]; lhpc["variance"]=lhpc_variance(lhpc["day"],tg["lhpc"]["value"])
+    aro_norm=(net_fn/cars_fn) if (net_fn and cars_fn) else None
+    aro["drivers"]=drivers_for_aro(latest,aro["sofar"],aro["target"],aro_norm,big4["items"],dcars)
     lab=labor_block(latest)
     ops=[["Differentials",str(diff["units"]),f"${diff['amount']:,.0f} · {(diff['pct'] or 0):.0f}% of cars"],
          ["Materials %",f"{latest.get('materials_pct') or 0:.0f}%","of net sales"],
