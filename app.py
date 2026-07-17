@@ -18,8 +18,9 @@ import streamlit.components.v1 as components
 from config import (BRAND, CENTRAL, STORE_CODES, CITY, REGIONS, DISTRICTS,
                     HOURS, NAVY, GREEN, RED, AMBER, PURPLE, MUTE, SCORECARD_DAYS,
                     ARO_TARGET, LHPC_TARGET, BIG4_GOAL)
-import calc, dashboard, scorecard_pdf, identity
+import calc, dashboard, scorecard_pdf, identity, datastore
 from datasource import fetch_today, fetch_history, fetch_days, healthcheck
+from config import BIG4_TARGETS
 
 st.set_page_config(page_title=f"{BRAND} - Take 5 Scorecard", layout="wide",
                    initial_sidebar_state="collapsed")
@@ -68,10 +69,6 @@ def is_mobile():
     except Exception: return False
 
 
-def _sl(s):
-    return f"{CITY.get(s, s)} #{s}"
-
-
 def _picker(options, current, key, mobile):
     """Segmented-control 'tabs' on desktop where available; compact selectbox on phone
     or older Streamlit. Returns the selected option string."""
@@ -84,50 +81,6 @@ def _picker(options, current, key, mobile):
             pass
     idx = options.index(current) if current in options else 0
     return st.selectbox("scope", options, index=idx, key=key, label_visibility="collapsed")
-
-
-def _scope_controls(role, user, mobile):
-    """Render the native scope tabs above the dashboard and return the ?scope= string.
-    Admin = two levels (region, then store); DM = team overview + own stores; store = none."""
-    try:
-        cur = st.query_params.get("scope", "") or ""
-    except Exception:
-        cur = ""
-
-    if role == "store":
-        return ""
-
-    if role == "district":
-        ids = user["stores"]
-        opts = ["Team overview"] + [_sl(s) for s in ids]
-        curlabel = "Team overview"
-        if cur.startswith("store:"):
-            s = cur.split(":", 1)[1]
-            if s in ids: curlabel = _sl(s)
-        pick = _picker(opts, curlabel, "scope_dm", mobile)
-        newscope = "all" if pick == "Team overview" else "store:" + pick.rsplit("#", 1)[-1].strip()
-
-    else:  # admin — level 1: region
-        region_opts = ["All Stores"] + list(REGIONS.keys())
-        curregion = identity.scope_region_of(cur) or "All Stores"
-        if curregion not in region_opts: curregion = "All Stores"
-        reg = _picker(region_opts, curregion, "scope_admin_region", mobile)
-        if reg == "All Stores":
-            newscope = "all"
-        else:  # level 2: store within the region
-            ids = REGIONS[reg]
-            st_opts = ["Region overview"] + [_sl(s) for s in ids]
-            curstore = "Region overview"
-            if cur.startswith("store:"):
-                s = cur.split(":", 1)[1]
-                if s in ids: curstore = _sl(s)
-            pick = _picker(st_opts, curstore, f"scope_admin_store_{reg}", mobile)
-            newscope = ("region:" + reg) if pick == "Region overview" else "store:" + pick.rsplit("#", 1)[-1].strip()
-
-    if newscope != cur:
-        try: st.query_params["scope"] = newscope
-        except Exception: pass
-    return newscope
 
 
 def login_view():
@@ -399,6 +352,46 @@ def _history_section(role, user, mobile):
                "volume-weighted across each week. Baseline = average of the 4 weeks before last week.")
 
 
+# ---------------- V4 (B-2): admin per-store targets editor (write path) ----------------
+_TGT_FIELDS = ([("cars_boost", "Cars boost %"), ("net_boost", "Net boost %"),
+                ("aro_target", "ARO target $"), ("lhpc_target", "LHPC target")]
+               + [("big4_" + n, n + " %") for n in BIG4_TARGETS])
+
+
+def _targets_editor(user):
+    import pandas as pd
+    st.markdown("---")
+    st.markdown("#### Admin — store targets")
+    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and "
+               "each Big 4 item are absolute targets. Leave a cell blank to use the default.")
+    cur = datastore.get_targets()
+    rows = []
+    for s in STORE_CODES:
+        t = cur.get(s, {})
+        row = {"Store": f"{CITY.get(s, s)} #{s}", "_id": s}
+        for key, lab in _TGT_FIELDS:
+            row[lab] = t.get(key)
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    edited = st.data_editor(df, key="targets_editor", hide_index=True,
+                            use_container_width=True, disabled=["Store"],
+                            column_config={"_id": None})
+    name = st.text_input("Your name (saved with each change)", key="tgt_name",
+                         placeholder="e.g. Sam R")
+    if st.button("Save targets", type="primary"):
+        who = identity.attribution(user, name)
+        edits = datastore.target_edits(cur, edited.to_dict("records"), _TGT_FIELDS)
+        try:
+            for s, key, val in edits:
+                if val is None:
+                    datastore.delete_target(s, key)
+                else:
+                    datastore.set_target(s, key, val, who)
+            st.success(f"Saved {len(edits)} change(s)." if edits else "No changes to save.")
+        except Exception as e:
+            st.error(f"Couldn't save targets: {type(e).__name__}: {e}")
+
+
 def main():
     if "auth" not in st.session_state:
         login_view(); return
@@ -439,10 +432,14 @@ def main():
         if st.button("Log out", use_container_width=True):
             del st.session_state.auth; st.cache_data.clear(); st.rerun()
 
-    # V4 (A): native scope tabs -> ?scope= deep link -> which payload we render.
-    # Store tier has no control (its scope is fixed). Selection persists across the
-    # auto-refresh because it lives in the URL query param (also fixes a V3 backlog item).
-    scope_str = _scope_controls(role, user, mobile)
+    # V4 (A): entry-point deep links, no on-page selector. The tier comes from the login;
+    # ?scope= lets an admin/DM open a specific store or region directly by URL (each level
+    # has its own shareable URL). Clicking around inside the page uses the dashboard's own
+    # in-component nav (kept from V3); default (no param) = the tier's normal view.
+    try:
+        scope_str = st.query_params.get("scope", "") or ""
+    except Exception:
+        scope_str = ""
     tier, allowed, scope = identity.resolve_scope(role, user, scope_str)
 
     # fallback guide (only when st.dialog isn't available)
@@ -453,6 +450,12 @@ def main():
                 st.session_state["_guide_open"] = False; st.rerun()
 
     _dashboard_view(tier, allowed, scope, mobile)
+
+    # V4 (B-2): admin targets editor — only on the admin overview (not when drilled into
+    # a single store), since it edits all stores. role stays 'admin' but tier flips to
+    # 'store' on a ?scope=store drill-in.
+    if role == "admin" and tier == "admin":
+        _targets_editor(user)
 
     # V4 (D): historical performance section — DM + admin only, read-only.
     # Outside the auto-refresh fragment so its metric toggle / store picker behave normally.

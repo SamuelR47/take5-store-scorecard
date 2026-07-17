@@ -78,14 +78,52 @@ def get_targets():
     return out
 
 
-def set_target(store, metric, boost_pct, updated_by=""):
-    """Upsert one store's boost% for one metric. Keyed (store_number, metric)."""
+def set_target(store, metric, value, updated_by=""):
+    """Upsert one store's value for one metric. Keyed (store_number, metric). The numeric
+    `boost_pct` column is used generically: a percent boost for cars/net, or an absolute
+    target for aro/lhpc/big4 items. `metric` keys match calc.resolve_targets: 'cars_boost',
+    'net_boost', 'aro_target', 'lhpc_target', 'big4_<Item>'."""
     _post("store_targets",
           {"store_number": str(store), "metric": metric,
-           "boost_pct": float(boost_pct), "updated_by": updated_by or "",
+           "boost_pct": float(value), "updated_by": updated_by or "",
            "updated_at": dt.datetime.now(CENTRAL).isoformat()},
           upsert=True, on_conflict="store_number,metric")
     _targets_raw.clear()
+
+
+def delete_target(store, metric):
+    """Clear one store's setting for one metric (reverts it to the flat default)."""
+    _delete("store_targets", f"store_number=eq.{_enc(store)}&metric=eq.{_enc(metric)}")
+    _targets_raw.clear()
+
+
+def target_edits(cur, rows, fields):
+    """Pure diff for the admin editor. `cur` = {store: {metric: value}} from get_targets;
+    `rows` = the edited table as list-of-dicts (each has '_id' = store_number + one entry per
+    field label); `fields` = [(metric_key, column_label), ...]. Returns a list of
+    (store, metric_key, value_or_None) for cells that actually changed — value None means
+    the cell was cleared (delete/revert to default). Empty string and NaN both read as
+    cleared; everything else is coerced to float."""
+    out = []
+    for r in rows:
+        s = str(r.get("_id"))
+        t = cur.get(s, {})
+        for key, lab in fields:
+            new = r.get(lab)
+            if new == "" or (isinstance(new, float) and new != new):   # "" or NaN
+                new = None
+            elif new is not None:
+                try:
+                    new = float(new)
+                except (TypeError, ValueError):
+                    new = None
+            old = t.get(key)
+            old = float(old) if old is not None else None
+            if new is None and old is None:
+                continue
+            if new != old:
+                out.append((s, key, new))
+    return out
 
 
 # ---------------- C. task_completions ----------------
