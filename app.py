@@ -636,15 +636,19 @@ def main():
                     "div[data-testid='stHorizontalBlock']{gap:.4rem}</style>", unsafe_allow_html=True)
     # V4: admin/DM run the full-width website component with ONE navy left nav (the native
     # sidebar, styled). Trim page gutters; style the sidebar to match the product. Store: as-is.
+    elif role == "store":
+        st.markdown("<style>[data-testid='stVerticalBlockBorderWrapper']{background:#FBF4E9;"
+                    "border-color:#E9D9BE!important;border-radius:12px}</style>", unsafe_allow_html=True)
     elif role in ("admin", "district"):
         st.markdown("""<style>
          .block-container{padding:.4rem .8rem 0!important;max-width:100%!important}
-         [data-testid="stSidebar"]{background:#14273F!important;width:212px!important;min-width:212px!important}
+         /* Nav is PERMANENT: force the sidebar open (override Streamlit's collapse transform)
+            so it can never disappear with no way back — the actual bug Samuel hit twice. */
+         [data-testid="stSidebar"],section[data-testid="stSidebar"]{background:#14273F!important;
+           width:212px!important;min-width:212px!important;transform:none!important;
+           visibility:visible!important;margin-left:0!important}
          [data-testid="stSidebar"] *{color:#fff}
-         /* Nav is permanent: hide the collapse arrow so the sidebar can't be hidden with no
-            way back (the reopen control lives in the hidden top header). */
-         [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
-         [data-testid="collapsedControl"]{display:none!important}
+         [data-testid="stSidebarCollapseButton"]{display:none!important}
          .navbrand{font-weight:800;font-size:1.06rem;padding:8px 6px 16px;line-height:1.2}
          .navbrand span{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:3px}
          [data-testid="stSidebar"] [role="radiogroup"]{gap:2px}
@@ -727,12 +731,14 @@ def main():
     if role == "store" and not mobile:
         left, right = st.columns([1.25, 5], gap="small")
         with left:
-            _task_checklist(user)
+            with st.container(border=True):
+                _task_checklist(user)
         with right:
             _dashboard_view(tier, allowed, scope, mobile, startview)
     else:
         if role == "store":
-            _task_checklist(user)
+            with st.container(border=True):
+                _task_checklist(user)
         _dashboard_view(tier, allowed, scope, mobile, startview)
 
 

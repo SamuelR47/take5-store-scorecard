@@ -90,7 +90,7 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .pill.g{background:var(--gbg);color:var(--green)}.pill.r{background:var(--rbg);color:var(--red)}.pill.a{background:var(--abg);color:var(--amber)}
 .mini{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:11px}
 .mini .ml{font-size:.59rem;text-transform:uppercase;color:var(--mute);font-weight:700}.mini .mv{font-size:.92rem;font-weight:800}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 17px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:15px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 16px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:10px}
 .chartbox{position:relative;height:230px}.chartbox.sm{height:150px}.chartbox.tall{height:430px}
 .mhead{display:flex;align-items:center;gap:9px;margin-bottom:13px}
 .acc{width:5px;height:18px;border-radius:3px}.mhead .t{font-weight:800;font-size:1rem}.mhead .n{color:var(--mute);font-size:.8rem}
@@ -144,9 +144,9 @@ table.heat th{background:var(--soft);color:var(--mute);font-weight:700}
 .detailwrap{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
 .dmain{min-width:0}
 .dmsg{position:sticky;top:8px}
-.msgbox{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.msgh{font-weight:800;font-size:.9rem;margin-bottom:10px}
-.msg{border-left:3px solid var(--blue);background:var(--soft);border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:8px}
+.msgbox{background:#FBF4E9;border:1px solid #E9D9BE;border-radius:12px;padding:14px 16px}
+.msgh{font-weight:800;font-size:.9rem;margin-bottom:10px;color:#8A5A12}
+.msg{border-left:3px solid #B57611;background:#fff;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:8px}
 .msgb{font-size:.82rem;color:var(--ink)}
 .msgm{font-size:.68rem;color:var(--mute);margin-top:4px}
 .msgempty{color:var(--mute);font-size:.8rem}
@@ -270,6 +270,7 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
  el.innerHTML=`${crumb}
   <div class="row"><div class="scopeName">${d.name} <span class="sub">#${d.id} · ${d.region||''} · opened ${d.open||'—'}</span></div></div>
   ${STORE?'':`<div id="picker">${storePicker()}</div>`}
+  <div class="detailwrap"><div class="dmain">
   <div class="kpis">
    <div class="kpi bt" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm??'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm??'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
    <div class="kpi at" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
@@ -277,7 +278,6 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
    <div class="kpi tt" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
    <div class="kpi nt" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
   </div>
-  <div class="detailwrap"><div class="dmain">
   ${cumSection('Cars',d.cars,C.blue,'cars',d)}
   ${aroSection(d)}
   ${cumSection('Net revenue',d.net,C.green,'net',d)}
