@@ -366,13 +366,13 @@ def build_web_payload(tier, allowed, scope_label, stamp):
 # wall-clock time, so we can't literally fire "5 min after the scraper"; the freshness
 # line/label shows the true last-sourced time regardless, so any staleness is visible.
 @_fragment(run_every=600)
-def _dashboard_view(tier, allowed, scope, mobile):
+def _dashboard_view(tier, allowed, scope, mobile, startview="overview"):
     now = dt.datetime.now(CENTRAL)
     stamp = now.strftime("%Y-%m-%d-%H-%M")
-    # V4 (B-3c): every tier renders the website component. Store logins get a store-locked
-    # view (their store only, no nav); admin/DM get the full site. Height is generous +
-    # JS auto-fit trims it to content so there's no empty gap.
-    payload = build_web_payload(tier, allowed, scope, stamp)
+    # V4 (B-3d): every tier renders the website component. The native sidebar chooses which
+    # section it opens on (startView). Store logins get a store-locked view (their store only).
+    payload = dict(build_web_payload(tier, allowed, scope, stamp))
+    payload["startView"] = startview
     components.html(web.html(payload), height=(1600 if mobile else 900), scrolling=True)
 
 
@@ -517,11 +517,24 @@ def main():
     if mobile:
         st.markdown("<style>.stButton>button{padding:.4rem .35rem;font-size:.82rem;min-height:0}"
                     "div[data-testid='stHorizontalBlock']{gap:.4rem}</style>", unsafe_allow_html=True)
-    # V4: admin/DM run the full-width website component, so trim the page gutters to near-0
-    # (the component supplies its own ~24px internal padding). Store view stays as-is.
+    # V4: admin/DM run the full-width website component with ONE navy left nav (the native
+    # sidebar, styled). Trim page gutters; style the sidebar to match the product. Store: as-is.
     elif role in ("admin", "district"):
-        st.markdown("<style>.block-container{padding:.4rem .6rem 0!important;max-width:100%!important}</style>",
-                    unsafe_allow_html=True)
+        st.markdown("""<style>
+         .block-container{padding:.4rem .8rem 0!important;max-width:100%!important}
+         [data-testid="stSidebar"]{background:#14273F!important;width:212px!important;min-width:212px!important}
+         [data-testid="stSidebar"] *{color:#fff}
+         .navbrand{font-weight:800;font-size:1.06rem;padding:8px 6px 16px;line-height:1.2}
+         .navbrand span{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:3px}
+         [data-testid="stSidebar"] [role="radiogroup"]{gap:2px}
+         [data-testid="stSidebar"] [role="radiogroup"] label{padding:9px 12px;border-radius:8px;margin:1px 0;
+           cursor:pointer;font-weight:600;font-size:.9rem;color:#C6D3E4}
+         [data-testid="stSidebar"] [role="radiogroup"] label:hover{background:rgba(255,255,255,.08);color:#fff}
+         [data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"],
+         [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){background:#fff;color:#14273F}
+         [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) *{color:#14273F}
+         [data-testid="stSidebar"] [role="radiogroup"] div[data-testid="stMarkdownContainer"]{color:inherit}
+        </style>""", unsafe_allow_html=True)
 
     ok, msg = healthcheck()
     if not ok:
@@ -567,19 +580,22 @@ def main():
             if st.button("Close guide"):
                 st.session_state["_guide_open"] = False; st.rerun()
 
-    # V4 (B-3c): left-nav Targets tab (admin). Rendered natively in the sidebar so it's a real
-    # left tab AND saves go through the server (never the browser). Targets is view-first with
-    # an Edit button; the dashboard component keeps its own instant section nav + drill-in.
-    if role == "admin" and tier == "admin":
+    # V4 (B-3d): ONE navy left nav (native sidebar) — Overview / Store detail / Historical,
+    # plus Targets (admin only) BELOW Historical. Drives which section the website component
+    # starts on. Targets renders the native view+editor (saves go through the server).
+    startview = "overview"
+    if role in ("admin", "district") and tier in ("admin", "district"):
+        items = ["Overview", "Store detail", "Historical"] + (["Targets"] if role == "admin" else [])
         with st.sidebar:
-            st.markdown("**Admin**")
-            amode = st.radio("Section", ["Dashboard", "Targets"], key="admin_mode",
-                             label_visibility="collapsed")
-        if amode == "Targets":
+            st.markdown("<div class='navbrand'>VantEdge Auto<span>Take 5 · Scorecard</span></div>",
+                        unsafe_allow_html=True)
+            section = st.radio("Navigation", items, label_visibility="collapsed", key="nav_section")
+        if section == "Targets":
             _targets_view(user)
             return
+        startview = {"Overview": "overview", "Store detail": "detail", "Historical": "hist"}[section]
 
-    _dashboard_view(tier, allowed, scope, mobile)
+    _dashboard_view(tier, allowed, scope, mobile, startview)
 
 
 if __name__ == "__main__":
