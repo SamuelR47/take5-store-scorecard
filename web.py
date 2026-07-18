@@ -71,15 +71,15 @@ _TMPL = r"""
 .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
 h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);font-weight:500;font-size:.8rem;margin-left:8px}
-.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,180px));gap:12px;justify-content:start}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .kpi .l{font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800}
-.kpi .v{font-size:1.6rem;font-weight:800;letter-spacing:-1px;margin-top:2px}
+.kpi .v{font-size:1.55rem;font-weight:800;letter-spacing:-1px;margin-top:2px}
 .kpi .vsub{font-size:.78rem;color:var(--mute);font-weight:700;letter-spacing:0}
 .storesel{margin-left:auto;padding:7px 11px;border:1px solid var(--line);border-radius:8px;font-weight:700;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer}
-.kpi .d{font-size:.74rem;font-weight:700;margin-top:2px}
+.kpi .d{font-size:.73rem;font-weight:700;margin-top:2px}
 .kpi.bt{border-top:3px solid var(--blue)}.kpi.gt{border-top:3px solid var(--green)}.kpi.at{border-top:3px solid var(--amber)}
-.kpi.tt{border-top:3px solid var(--teal)}.kpi.nt{border-top:3px solid var(--navy)}
+.kpi.tt{border-top:3px solid var(--teal)}.kpi.nt{border-top:3px solid var(--navy)}.kpi.rt{border-top:3px solid var(--red)}
 .pos{color:var(--green)}.neg{color:var(--red)}.amb{color:var(--amber)}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:13px}
 .scard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;cursor:pointer;transition:box-shadow .12s,transform .12s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
@@ -94,24 +94,24 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .chartbox{position:relative;height:230px}.chartbox.sm{height:150px}.chartbox.tall{height:430px}
 .mhead{display:flex;align-items:center;gap:9px;margin-bottom:13px}
 .acc{width:5px;height:18px;border-radius:3px}.mhead .t{font-weight:800;font-size:1rem}.mhead .n{color:var(--mute);font-size:.8rem}
-.mrow{display:grid;grid-template-columns:320px 1fr;gap:20px}
-.boxes{display:flex;flex-direction:column;gap:10px}
-.box{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--soft)}
-.box .bl{font-size:.62rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:800}
-.box .bsub{font-size:.7rem;color:var(--mute);margin-top:1px}
+.mrow{display:grid;grid-template-columns:250px 1fr;gap:18px}
+.boxes{display:flex;flex-direction:column;gap:8px}
+.box{border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--soft)}
+.box .bl{font-size:.58rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:800}
+.box .bsub{font-size:.66rem;color:var(--mute);margin-top:1px}
 .triple{display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;align-items:end;margin-top:6px}
-.triple .big{font-size:1.3rem;font-weight:800;letter-spacing:-.5px}.triple .mid{font-size:1rem;font-weight:800}.triple .cap{font-size:.65rem;color:var(--mute);font-weight:600}
+.triple .big{font-size:1.1rem;font-weight:800;letter-spacing:-.5px}.triple .mid{font-size:.88rem;font-weight:800}.triple .cap{font-size:.6rem;color:var(--mute);font-weight:600}
 .clickable{cursor:pointer}.clickable:hover{border-color:#CBD5E1;background:#fff}
 .chev{font-size:.64rem;color:var(--blue);font-weight:800}
 .expand{display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px}.expand.open{display:block}
-.tgt{border-color:#F0C9B8;background:#FBF1EC}.tgt .bl{color:#993C1D}.tgt .val{color:#993C1D;font-size:1.3rem;font-weight:800}
+.tgt{border-color:#F0C9B8;background:#FBF1EC}.tgt .bl{color:#993C1D}.tgt .val{color:#993C1D;font-size:1.1rem;font-weight:800}
 .badge{background:#F1D6C8;color:#8A3617;border-radius:4px;padding:1px 6px;font-size:.63rem;font-weight:800}
 .legend{display:flex;gap:16px;justify-content:center;margin-bottom:6px;font-size:.72rem;font-weight:700}
 .lg span{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:5px}
 .band{display:grid;grid-template-columns:5fr 5fr 4fr;gap:4px;margin-bottom:6px}
 .band div{font-size:.61rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800;text-align:center;background:var(--soft);border-radius:5px;padding:3px 0}
-.driver{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--soft)}
-.driver .dt{font-weight:800;font-size:.82rem}.driver .dm{font-size:.78rem;margin-top:3px}
+.driver{border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--soft)}
+.driver .dt{font-weight:800;font-size:.78rem}.driver .dm{font-size:.73rem;margin-top:2px}
 .tag{font-size:.62rem;font-weight:800;padding:2px 7px;border-radius:5px;margin-left:6px}
 .tag.r{background:var(--rbg);color:var(--red)}.tag.a{background:var(--abg);color:var(--amber)}.tag.g{background:var(--gbg);color:var(--green)}
 .crumb{font-size:.8rem;color:var(--mute);margin-bottom:2px}.crumb a{color:var(--blue);cursor:pointer;font-weight:600}
@@ -277,6 +277,7 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
    <div class="kpi gt" title="Net so far $${Math.round(k.net).toLocaleString()} · 4-week average by this hour $${k.netNorm??'—'} · ${pc(k.netPace)} vs that average"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()} <span class="vsub">/ $${k.netNorm??'—'} 4-wk</span></div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} vs 4-wk</div></div>
    <div class="kpi tt" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
    <div class="kpi nt" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
+   ${(()=>{const tk=Math.round(k.task||0);const st=tk>=80?'gt':(tk>=50?'at':'rt');const dc=tk>=80?'pos':(tk>=50?'amb':'neg');return `<div class="kpi ${st}" title="Today's daily-task completion for this store"><div class="l">Task</div><div class="v">${tk}%</div><div class="d ${dc}">done today</div></div>`;})()}
   </div>
   ${cumSection('Cars',d.cars,C.blue,'cars',d)}
   ${aroSection(d)}

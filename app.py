@@ -368,6 +368,7 @@ def build_web_payload(tier, allowed, scope_label, stamp):
             di = [t for t in tl if t in dc]
             tvals.append(round(len(di) / len(tl) * 100) if tl else 0); titems.append(di)
         metrics["task"] = tvals
+        d["kpi"]["task"] = tvals[-1] if tvals else 0  # today's task completion % (6th KPI)
         hstores.append({"id": s, "name": f"{CITY[s]} {s}",
                         "color": _WEB_PALETTE[idx % len(_WEB_PALETTE)], "metrics": metrics,
                         "taskItems": titems}); idx += 1
