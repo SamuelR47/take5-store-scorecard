@@ -10,7 +10,7 @@ V3 shell:
 - User guide opens in a modal as page IMAGES (reliable on every device, unlike a PDF
   data-URI) with a download fallback.
 """
-import base64, os, datetime as dt
+import base64, os, html, datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 import streamlit as st
 import streamlit.components.v1 as components
@@ -392,6 +392,7 @@ def build_web_payload(tier, allowed, scope_label, stamp):
                   + ["After " + calc.hour_label(c)])
     return {"tier": tier, "mode": "store" if tier == "store" else "full",
             "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
+            "date": now.strftime("%A, %b %-d %Y"),
             "sourced": sourced, "kpis": kpis, "regions": regions, "rows": rows, "detail": detail,
             "heatHours": heat_hours,
             "hist": {"days": labels, "today": "Today", "stores": hstores, "metric": "cars"}}
@@ -488,6 +489,17 @@ _TGT_DEFAULTS = {"cars_boost": 0.0, "net_boost": 0.0, "aro_target": float(ARO_TA
                  **{"big4_" + n: float(BIG4_TARGETS[n]) for n in BIG4_TARGETS}}
 
 
+def _task_toggle(store, today, task, key, label):
+    """on_change callback — fires once per toggle (no lost rapid clicks / rerun races)."""
+    try:
+        if st.session_state.get(key):
+            datastore.complete_task(store, today, task, label)
+        else:
+            datastore.uncomplete_task(store, today, task)
+    except Exception as e:
+        st.session_state["_task_err"] = f"{type(e).__name__}: {e}"
+
+
 def _task_checklist(user):
     """Store-login daily task panel (left column). Native checkboxes → task_completions."""
     st.markdown("<span id='taskbox-marker'></span>", unsafe_allow_html=True)
@@ -501,18 +513,33 @@ def _task_checklist(user):
     n = len(tasks); c = sum(1 for t in tasks if t in done)
     st.markdown("#### Today's tasks")
     st.caption(f"{DOW_FULL[now.weekday()]} · {c}/{n} done" + (f" · {round(c/n*100)}%" if n else ""))
+    if st.session_state.pop("_task_err", None):
+        st.error("A task didn't save — click it again.")
     for i, t in enumerate(tasks):
-        checked = t in done
-        v = st.checkbox(t, value=checked, key=f"tk_{store}_{i}")
-        if v != checked:
-            try:
-                if v:
-                    datastore.complete_task(store, today, t, user.get("label"))
-                else:
-                    datastore.uncomplete_task(store, today, t)
-            except Exception as e:
-                st.error(f"Save failed: {type(e).__name__}")
-            st.rerun()
+        k = f"tk_{store}_{today}_{i}"  # date in key so state resets each day
+        st.checkbox(t, value=(t in done), key=k,
+                    on_change=_task_toggle, args=(store, today, t, k, user.get("label")))
+
+
+def _store_messages(user):
+    """Store-login messages panel (right column, native so tops align with tasks/KPIs).
+    Read-only inbox for this store, tan box to match Today's tasks."""
+    st.markdown("<span id='msgbox-marker'></span>", unsafe_allow_html=True)
+    st.markdown("#### Messages")
+    try:
+        msgs = datastore.get_inbox("store", user["code"])
+    except Exception:
+        msgs = []
+    if not msgs:
+        st.caption("No messages yet.")
+        return
+    for m in msgs:
+        body = html.escape(m.get("body") or "")
+        frm = html.escape(m.get("from_user") or "")
+        when = (m.get("sent_at") or "")[:16].replace("T", " ")
+        st.markdown(
+            f"<div class='smsg'><div class='smsg-b'>{body}</div>"
+            f"<div class='smsg-m'>{frm} · {when}</div></div>", unsafe_allow_html=True)
 
 
 def _daily_task_admin(user):
@@ -673,8 +700,15 @@ def main():
     # sidebar, styled). Trim page gutters; style the sidebar to match the product. Store: as-is.
     elif role == "store":
         st.markdown("<style>"
-                    "[data-testid='column']:has(#taskbox-marker),[data-testid='stColumn']:has(#taskbox-marker)"
-                    "{background:#FBF4E9;border:1px solid #E9D9BE;border-radius:12px;padding:14px 14px 6px}"
+                    ".block-container{padding-top:.6rem!important}"
+                    # tan boxes for the tasks (left) and messages (right) columns
+                    "[data-testid='column']:has(#taskbox-marker),[data-testid='stColumn']:has(#taskbox-marker),"
+                    "[data-testid='column']:has(#msgbox-marker),[data-testid='stColumn']:has(#msgbox-marker)"
+                    "{background:#FBF4E9;border:1px solid #E9D9BE;border-radius:12px;padding:14px 14px 8px}"
+                    # message cards inside the tan column
+                    ".smsg{background:#fff;border:1px solid #E9D9BE;border-radius:9px;padding:9px 11px;margin-bottom:8px}"
+                    ".smsg-b{font-size:.82rem;color:#0F172A;line-height:1.35}"
+                    ".smsg-m{font-size:.68rem;color:#8A6D3B;font-weight:700;margin-top:4px}"
                     "</style>", unsafe_allow_html=True)
     elif role in ("admin", "district"):
         st.markdown("""<style>
@@ -766,14 +800,17 @@ def main():
     # V4 (C): store login gets the daily-task checklist in the LEFT column (native, so it can
     # save), with the dashboard component on the right. Other tiers render full-width.
     if role == "store" and not mobile:
-        left, right = st.columns([1, 6.5], gap="small")
+        left, mid, right = st.columns([1.05, 5.4, 1.35], gap="small")
         with left:
             _task_checklist(user)
-        with right:
+        with mid:
             _dashboard_view(tier, allowed, scope, mobile, startview)
+        with right:
+            _store_messages(user)
     else:
         if role == "store":
             _task_checklist(user)
+            _store_messages(user)
         _dashboard_view(tier, allowed, scope, mobile, startview)
 
 

@@ -72,12 +72,12 @@ _TMPL = r"""
 .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
 h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);font-weight:500;font-size:.8rem;margin-left:8px}
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
-.kpi .l{font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800}
-.kpi .v{font-size:1.55rem;font-weight:800;letter-spacing:-1px;margin-top:2px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.kpi .l{font-size:.6rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:800}
+.kpi .v{font-size:1.3rem;font-weight:800;letter-spacing:-.5px;margin-top:1px}
 .kpi .vsub{font-size:.78rem;color:var(--mute);font-weight:700;letter-spacing:0}
 .storesel{margin-left:auto;padding:7px 11px;border:1px solid var(--line);border-radius:8px;font-weight:700;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer}
-.kpi .d{font-size:.73rem;font-weight:700;margin-top:2px}
+.kpi .d{font-size:.68rem;font-weight:700;margin-top:1px}
 .kpi.bt{border-top:3px solid var(--blue)}.kpi.gt{border-top:3px solid var(--green)}.kpi.at{border-top:3px solid var(--amber)}
 .kpi.tt{border-top:3px solid var(--teal)}.kpi.nt{border-top:3px solid var(--navy)}.kpi.rt{border-top:3px solid var(--red)}
 .kpi.sg{background:var(--gbg);border-color:#BFE0CC}.kpi.sr{background:var(--rbg);border-color:#F0C9C6}.kpi.sa{background:var(--abg);border-color:#EBD9AE}
@@ -99,7 +99,7 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .chartbox{position:relative;height:230px}.chartbox.sm{height:150px}.chartbox.tall{height:430px}
 .mhead{display:flex;align-items:center;gap:9px;margin-bottom:13px}
 .acc{width:5px;height:18px;border-radius:3px}.mhead .t{font-weight:800;font-size:1rem}.mhead .n{color:var(--mute);font-size:.8rem}
-.mrow{display:grid;grid-template-columns:250px 1fr;gap:18px}
+.mrow{display:grid;grid-template-columns:210px 1fr;gap:16px}
 .boxes{display:flex;flex-direction:column;gap:8px}
 .box{border:1px solid var(--line);border-radius:9px;padding:7px 10px;background:var(--soft)}
 .box .bl{font-size:.58rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:800}
@@ -147,7 +147,21 @@ table.heat th{background:var(--soft);color:var(--mute);font-weight:700;font-size
 .spill{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;font-size:.78rem;font-weight:600;cursor:pointer;color:var(--ink)}
 .spill.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .detailwrap{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
-.dmain{min-width:0}
+.detailwrap.nomsg{grid-template-columns:1fr}
+.navhead{background:var(--navy);color:#fff;border-radius:12px;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;border-left:5px solid var(--red);margin-bottom:6px}
+.navhead .brand2{font-weight:800;font-size:1.2rem;letter-spacing:-.3px}
+.navhead .sub2{color:#9FB4CC;font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;display:block;margin-top:2px}
+.navhead .rt{text-align:right;font-size:.82rem;line-height:1.5}
+.navhead .rt b{font-size:.95rem}
+.navhead .rt small{color:#9FB4CC}
+.navhead .live{color:#37D08A;font-weight:800}
+.subline{color:var(--mute);font-size:.76rem;font-weight:600;margin:0 0 12px 2px}
+.row2{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;margin-bottom:12px}
+.card2{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px}
+.card2 .sh2{font-weight:800;font-size:1rem;margin-bottom:10px}.card2 .sh2 .sub{font-weight:600}
+.expl2{display:grid;gap:9px}
+.pbox .h2{font-weight:800;color:var(--navy);font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.pbox{font-size:.79rem;color:var(--ink);line-height:1.4}
 .dmsg{position:sticky;top:8px}
 .msgbox{background:#FBF4E9;border:1px solid #E9D9BE;border-radius:12px;padding:14px 16px}
 .msgh{font-weight:800;font-size:.9rem;margin-bottom:10px;color:#8A5A12}
@@ -273,10 +287,12 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
  if(!d){el.innerHTML='<div class="empty">Select a store from Overview.</div>';return;}
  const k=d.kpi;
  const crumb=STORE?'':`<div class="crumb"><a onclick="nav('overview')">Overview</a> › <b>${d.name} · #${d.id}</b></div>`;
- el.innerHTML=`${crumb}
-  <div class="row"><div class="scopeName">${d.name} <span class="sub">#${d.id} · ${d.region||''} · opened ${d.open||'—'}</span></div></div>
-  ${STORE?'':`<div id="picker">${storePicker()}</div>`}
-  <div class="detailwrap"><div class="dmain">
+ const navhead=`<div class="navhead"><div><span class="brand2">VantEdge Auto</span><span class="sub2">Take 5 · Time Report</span></div>
+  <div class="rt"><b>${d.name} · #${d.id}</b><br>${P.date||''} · <span class="live">● live</span> · ${P.asof||''}</div></div>`;
+ el.innerHTML=`${crumb}${STORE?'':`<div id="picker">${storePicker()}</div>`}
+  ${navhead}
+  <div class="subline">${d.region||''} · opened ${d.open||'—'}</div>
+  <div class="detailwrap ${STORE?'nomsg':''}"><div class="dmain">
   <div class="kpis">
    <div class="kpi ${kcls(k.carsStatus)}" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm??'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm??'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
    <div class="kpi ${kcls(k.aroStatus)}" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
@@ -293,7 +309,7 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
   ${lhpcSection(d)}
   ${scoreSection(d)}
   ${opsSection(d)}
-  </div><aside class="dmsg">${msgPanel(d)}</aside></div>`;
+  </div>${STORE?'':`<aside class="dmsg">${msgPanel(d)}</aside>`}</div>`;
  drawMain(d);
 }
 function scoreSection(d){const sc=d.scorecards||{};const k=d.kpi;
@@ -330,15 +346,20 @@ function cumSection(title,m,color,key,d){
      <div><div class="mid ${scls(m.status)}">${pc(m.pace)}</div><div class="cap">vs 4-wk</div></div>
      <div><div class="big">${fv(m.norm)}</div><div class="cap">4-wk avg <span class="chev">▾</span></div></div></div>
     <div class="expand" id="${key}wk"><div class="sub">Last 4 same-weekdays by this hour + today</div><div class="chartbox sm"><canvas id="c_${key}wk"></canvas></div></div></div>
-   <div class="box" title="${tProj}"><div class="bl">Projected finish</div><div class="bsub">pace-scaled · excludes boost</div><div class="triple" style="grid-template-columns:1fr"><div class="big" style="color:${color}">${fv(m.est_close)}</div></div></div>
+   <div class="box" title="${tProj}"><div class="bl">Projected finish</div><div class="bsub">pace-scaled</div><div class="triple" style="grid-template-columns:1fr"><div class="big" style="color:${color}">${fv(m.est_close)}</div></div></div>
    <div class="box tgt" title="${tTgt}"><div class="bl">Target</div><div class="bsub">${m.tgt!=null?tgtSrc:'—'}</div><div class="val">${m.tgt!=null?fv(m.tgt):'—'}</div></div>
   </div>
   <div><div class="legend"><span class="lg"><span style="background:${C.blue}"></span>Actual</span><span class="lg" style="color:${C.green}"><span style="border-top:2px dashed ${C.green};background:none;height:0"></span>Projected</span><span class="lg" style="color:${C.red}"><span style="border-top:2px dotted ${C.red};background:none;height:0"></span>Target</span></div>
    ${band()}<div class="chartbox"><canvas id="c_${key}"></canvas></div></div></div></div>`;
 }
-function moversSection(d){const mv=d.movers||[];if(!mv.length)return '';
- return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.navy}"></div><span class="t">What's driving value</span><span class="n">biggest movers</span></div>
-  <div class="drivers">${mv.map(x=>`<div class="drv ${x.st}" title="${x.s}"><div class="dt">${x.t}</div><div class="dm ${scls(x.st)}">${x.m}</div><div class="ds">${x.s}</div></div>`).join('')}</div></div>`;
+function moversSection(d){const mv=d.movers||[];
+ const wd=(P.date||'').split(',')[0]||'day';
+ const mov=`<div class="card2"><div class="sh2">What's driving value <span class="sub sub-mute">— biggest movers</span></div>`+
+   (mv.length?`<div class="drivers">${mv.map(x=>`<div class="drv ${x.st}" title="${x.s}"><div class="dt">${x.t}</div><div class="dm ${scls(x.st)}">${x.m}</div><div class="ds">${x.s}</div></div>`).join('')}</div>`:`<div class="sub">Nothing notable yet.</div>`)+`</div>`;
+ const how=`<div class="card2"><div class="sh2">How to read this</div><div class="expl2">
+   <div class="pbox"><div class="h2">4-Week Comparison</div>Today so far vs a <b>normal ${wd}</b> — the simple average of the last 4 same-weekdays at this same time. <b>+%</b> ahead, <b>−%</b> behind.</div>
+   <div class="pbox"><div class="h2">Projected</div>Where the day is trending by close: <b>today's banked total</b> plus the rest of a typical day, nudged by how today is pacing. An estimate, not a promise.</div></div></div>`;
+ return `<div class="row2">${mov}${how}</div>`;
 }
 function aroSection(d){const a=d.aro;
  return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.amber}"></div><span class="t">ARO — average repair order</span><span class="n">running revenue per car vs target</span></div>
