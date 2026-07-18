@@ -46,7 +46,7 @@ _TMPL = r"""
  --bg:#F4F6F9;--card:#fff;--soft:#F7F9FC;--gbg:#E7F3EC;--rbg:#FBEAE9;--abg:#FBF1DF;}
 *{box-sizing:border-box}
 #root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);font-size:14px}
-.app{display:flex;min-height:640px;background:var(--bg)}
+.app{display:flex;min-height:640px;background:#fff}
 .side{width:206px;flex:0 0 206px;background:var(--navy);color:#fff;padding:16px 12px;display:flex;flex-direction:column}
 .brand{font-weight:800;font-size:1.05rem;padding:6px 8px}
 .brand small{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:2px}
@@ -80,6 +80,11 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .kpi .d{font-size:.73rem;font-weight:700;margin-top:2px}
 .kpi.bt{border-top:3px solid var(--blue)}.kpi.gt{border-top:3px solid var(--green)}.kpi.at{border-top:3px solid var(--amber)}
 .kpi.tt{border-top:3px solid var(--teal)}.kpi.nt{border-top:3px solid var(--navy)}.kpi.rt{border-top:3px solid var(--red)}
+.kpi.sg{background:var(--gbg);border-color:#BFE0CC}.kpi.sr{background:var(--rbg);border-color:#F0C9C6}.kpi.sa{background:var(--abg);border-color:#EBD9AE}
+.drivers{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.drv{border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--soft)}
+.drv.g{background:var(--gbg)}.drv.r{background:var(--rbg)}.drv.a{background:var(--abg)}
+.drv .dt{font-weight:800;font-size:.82rem}.drv .dm{font-weight:800;font-size:.8rem;margin-top:1px}.drv .ds{font-size:.72rem;color:var(--mute);margin-top:2px}
 .pos{color:var(--green)}.neg{color:var(--red)}.amb{color:var(--amber)}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:13px}
 .scard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;cursor:pointer;transition:box-shadow .12s,transform .12s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
@@ -182,6 +187,7 @@ const fmt={cars:v=>Math.round(v),net:v=>'$'+Math.round(v).toLocaleString(),aro:v
 const stCol={g:C.green,a:C.amber,r:C.red,flat:C.mute};
 function pc(v){return v==null?'—':((v>=0?'+':'')+(+v).toFixed(1)+'%');}
 function scls(s){return s==='g'?'pos':(s==='r'?'neg':(s==='a'?'amb':''));}
+function kcls(s){return s==='g'?'sg':(s==='r'?'sr':(s==='a'?'sa':''));}
 function mk(id,cfg){const el=document.getElementById(id);if(!el)return;if(ch[id])ch[id].destroy();ch[id]=new Chart(el,cfg);}
 const G={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},elements:{point:{radius:0}}};
 
@@ -272,13 +278,14 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
   ${STORE?'':`<div id="picker">${storePicker()}</div>`}
   <div class="detailwrap"><div class="dmain">
   <div class="kpis">
-   <div class="kpi bt" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm??'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm??'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
-   <div class="kpi at" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
-   <div class="kpi gt" title="Net so far $${Math.round(k.net).toLocaleString()} · 4-week average by this hour $${k.netNorm??'—'} · ${pc(k.netPace)} vs that average"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()} <span class="vsub">/ $${k.netNorm??'—'} 4-wk</span></div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} vs 4-wk</div></div>
-   <div class="kpi tt" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
-   <div class="kpi nt" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
-   ${(()=>{const tk=Math.round(k.task||0);const st=tk>=80?'gt':(tk>=50?'at':'rt');const dc=tk>=80?'pos':(tk>=50?'amb':'neg');return `<div class="kpi ${st}" title="Today's daily-task completion for this store"><div class="l">Task</div><div class="v">${tk}%</div><div class="d ${dc}">done today</div></div>`;})()}
+   <div class="kpi ${kcls(k.carsStatus)}" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm??'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm??'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
+   <div class="kpi ${kcls(k.aroStatus)}" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
+   <div class="kpi ${kcls(k.netStatus)}" title="Net so far $${Math.round(k.net).toLocaleString()} · 4-week average by this hour $${k.netNorm??'—'} · ${pc(k.netPace)} vs that average"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()} <span class="vsub">/ $${k.netNorm??'—'} 4-wk</span></div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} vs 4-wk</div></div>
+   <div class="kpi ${kcls(k.big4Status)}" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
+   <div class="kpi ${kcls(k.lhpcStatus)}" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
+   ${(()=>{const tk=Math.round(k.task||0);const st=tk>=80?'sg':(tk>=50?'sa':'sr');const dc=tk>=80?'pos':(tk>=50?'amb':'neg');return `<div class="kpi ${st}" title="Today's daily-task completion for this store"><div class="l">Task</div><div class="v">${tk}%</div><div class="d ${dc}">done today</div></div>`;})()}
   </div>
+  ${moversSection(d)}
   ${cumSection('Cars',d.cars,C.blue,'cars',d)}
   ${aroSection(d)}
   ${cumSection('Net revenue',d.net,C.green,'net',d)}
@@ -329,11 +336,14 @@ function cumSection(title,m,color,key,d){
   <div><div class="legend"><span class="lg"><span style="background:${C.blue}"></span>Actual</span><span class="lg" style="color:${C.green}"><span style="border-top:2px dashed ${C.green};background:none;height:0"></span>Projected</span><span class="lg" style="color:${C.red}"><span style="border-top:2px dotted ${C.red};background:none;height:0"></span>Target</span></div>
    ${band()}<div class="chartbox"><canvas id="c_${key}"></canvas></div></div></div></div>`;
 }
-function aroSection(d){const a=d.aro,dr=d.drivers||[];
+function moversSection(d){const mv=d.movers||[];if(!mv.length)return '';
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.navy}"></div><span class="t">What's driving value</span><span class="n">biggest movers</span></div>
+  <div class="drivers">${mv.map(x=>`<div class="drv ${x.st}" title="${x.s}"><div class="dt">${x.t}</div><div class="dm ${scls(x.st)}">${x.m}</div><div class="ds">${x.s}</div></div>`).join('')}</div></div>`;
+}
+function aroSection(d){const a=d.aro;
  return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.amber}"></div><span class="t">ARO — average repair order</span><span class="n">running revenue per car vs target</span></div>
   <div class="mrow"><div class="boxes">
    <div class="box" title="ARO so far $${Math.round(a.sofar||0)} = net ÷ cars · target $${Math.round(a.target||125)} (${pc(a.gap)} gap)"><div class="bl">Today</div><div class="triple"><div><div class="big">$${Math.round(a.sofar||0)}</div><div class="cap">so far</div></div><div><div class="mid ${a.gap>=0?'pos':'neg'}">${pc(a.gap)}</div><div class="cap">gap</div></div><div><div class="big">$${Math.round(a.target||125)}</div><div class="cap">target</div></div></div></div>
-   ${dr.slice(0,2).map((x,i)=>`<div class="driver clickable" onclick="tog('arod${i}')"><div class="dt">${x.title}<span class="tag ${x.status}">driver</span> <span class="chev">▾</span></div><div class="dm">${x.message}</div><div class="expand" id="arod${i}"><div class="chartbox sm"><canvas id="c_arod${i}"></canvas></div></div></div>`).join('')||'<div class="box"><div class="bsub">No standout driver — ARO tracking normal.</div></div>'}
   </div><div>${band()}<div class="chartbox" style="height:266px"><canvas id="c_aro"></canvas></div></div></div></div>`;
 }
 function big4Section(d){const b=d.big4;

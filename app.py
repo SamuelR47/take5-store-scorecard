@@ -303,7 +303,8 @@ def _web_detail(sp):
                      "target": b.get("target"), "items": b.get("items", [])},
             "lhpc": {"roll": l["roll"], "hours": l["hours"], "day": l.get("day") or 0,
                      "now": l.get("now"), "target": l.get("target"), "variance": l.get("variance")},
-            "drivers": a.get("drivers", []), "ops": sp.get("ops", [])}
+            "drivers": a.get("drivers", []), "movers": sp.get("drivers", []),
+            "ops": sp.get("ops", [])}
 
 
 @st.cache_data(ttl=300, show_spinner="Loading dashboard…")
@@ -489,6 +490,7 @@ _TGT_DEFAULTS = {"cars_boost": 0.0, "net_boost": 0.0, "aro_target": float(ARO_TA
 
 def _task_checklist(user):
     """Store-login daily task panel (left column). Native checkboxes → task_completions."""
+    st.markdown("<span id='taskbox-marker'></span>", unsafe_allow_html=True)
     store = user["code"]
     now = dt.datetime.now(CENTRAL); today = now.strftime("%Y-%m-%d")
     tasks = TASKS_BY_DOW.get(now.weekday(), [])
@@ -551,8 +553,7 @@ def _messages_admin(user):
     st.markdown("#### Messages")
     st.caption("Send a message to one store. It shows on that store's scorecard (right side).")
     store = st.selectbox("Store", STORE_CODES, format_func=lambda s: labels[s], key="msg_store")
-    body = st.text_area("Message", key="msg_body",
-                        placeholder="e.g. Great Big 4 day — keep pushing the coolant exchange.")
+    body = st.text_area("Message", key="msg_body", placeholder="")
     name = st.text_input("Your name", key="msg_name", placeholder="John Doe")
     if st.button("Send message", type="primary"):
         if body.strip():
@@ -671,11 +672,9 @@ def main():
     # V4: admin/DM run the full-width website component with ONE navy left nav (the native
     # sidebar, styled). Trim page gutters; style the sidebar to match the product. Store: as-is.
     elif role == "store":
-        st.markdown("<style>[data-testid='stVerticalBlockBorderWrapper']{background:#FBF4E9!important;"
-                    "border:1px solid #E9D9BE!important;border-radius:12px!important}"
-                    "[data-testid='stVerticalBlockBorderWrapper'] *{color:#0F172A}"
-                    "[data-testid='stVerticalBlockBorderWrapper'] .stCaption,"
-                    "[data-testid='stVerticalBlockBorderWrapper'] [data-testid='stCaptionContainer']{color:#8A5A12}"
+        st.markdown("<style>"
+                    "[data-testid='column']:has(#taskbox-marker),[data-testid='stColumn']:has(#taskbox-marker)"
+                    "{background:#FBF4E9;border:1px solid #E9D9BE;border-radius:12px;padding:14px 14px 6px}"
                     "</style>", unsafe_allow_html=True)
     elif role in ("admin", "district"):
         st.markdown("""<style>
@@ -769,14 +768,12 @@ def main():
     if role == "store" and not mobile:
         left, right = st.columns([1, 6.5], gap="small")
         with left:
-            with st.container(border=True):
-                _task_checklist(user)
+            _task_checklist(user)
         with right:
             _dashboard_view(tier, allowed, scope, mobile, startview)
     else:
         if role == "store":
-            with st.container(border=True):
-                _task_checklist(user)
+            _task_checklist(user)
         _dashboard_view(tier, allowed, scope, mobile, startview)
 
 
