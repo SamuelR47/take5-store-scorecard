@@ -71,7 +71,7 @@ _TMPL = r"""
 .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
 h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);font-weight:500;font-size:.8rem;margin-left:8px}
-.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,180px));gap:12px;justify-content:start}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .kpi .l{font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800}
 .kpi .v{font-size:1.6rem;font-weight:800;letter-spacing:-1px;margin-top:2px}
@@ -130,9 +130,9 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .os{font-size:.68rem;color:var(--mute)}
 @media(max-width:820px){.big4grid{grid-template-columns:1fr}}
 .heatscroll{overflow-x:auto}
-table.heat{border-collapse:collapse;font-size:.72rem;min-width:100%}
-table.heat th,table.heat td{border:1px solid #EEF1F5;padding:3px 6px;text-align:center;white-space:nowrap}
-table.heat th{background:var(--soft);color:var(--mute);font-weight:700}
+table.heat{border-collapse:collapse;font-size:.64rem}
+table.heat th,table.heat td{border:1px solid #EEF1F5;padding:2px 5px;text-align:center;white-space:nowrap;min-width:34px}
+table.heat th{background:var(--soft);color:var(--mute);font-weight:700;font-size:.58rem}
 .heat .hh{text-align:left;color:var(--mute);font-weight:700;background:var(--soft)}
 .heat .hid{color:var(--mute);font-weight:500;font-size:.62rem}
 .picker{margin:4px 0 12px}

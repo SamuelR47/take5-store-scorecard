@@ -480,6 +480,10 @@ def _history_section(role, user, mobile):
 _TGT_FIELDS = ([("cars_boost", "Cars boost %"), ("net_boost", "Net boost %"),
                 ("aro_target", "ARO target $"), ("lhpc_target", "LHPC target")]
                + [("big4_" + n, n + " %") for n in BIG4_TARGETS])
+# effective defaults shown when a store hasn't customized a target (the historical goals)
+_TGT_DEFAULTS = {"cars_boost": 0.0, "net_boost": 0.0, "aro_target": float(ARO_TARGET),
+                 "lhpc_target": float(LHPC_TARGET),
+                 **{"big4_" + n: float(BIG4_TARGETS[n]) for n in BIG4_TARGETS}}
 
 
 def _task_checklist(user):
@@ -509,8 +513,8 @@ def _task_checklist(user):
 
 
 def _daily_task_admin(user):
-    """Admin Daily task tab: stores (rows) x today's tasks (cols), green checks + % complete."""
-    import pandas as pd
+    """Admin Daily task tab: stores (rows) x today's tasks (cols), green checks + % complete.
+    Rendered as a plain HTML table (no pandas Styler — Styler.applymap was removed upstream)."""
     now = dt.datetime.now(CENTRAL); today = now.strftime("%Y-%m-%d"); wd = now.weekday()
     tasks = TASKS_BY_DOW.get(wd, [])
     st.markdown("#### Daily task")
@@ -519,17 +523,24 @@ def _daily_task_admin(user):
         comp = datastore.get_completions(today)
     except Exception:
         comp = {}
-    rows = []
+    def _pcol(p): return "#158A5A" if p >= 80 else ("#B57611" if p >= 50 else "#D0342C")
+    th = "".join(f"<th>{t}</th>" for t in tasks)
+    body = ""
     for s in STORE_CODES:
         d = comp.get(s, {}); done = sum(1 for t in tasks if t in d)
-        row = {"Store": f"{CITY[s]} #{s}", "%": round(done / len(tasks) * 100) if tasks else 0}
-        for t in tasks:
-            row[t] = "✓" if t in d else ""
-        rows.append(row)
-    df = pd.DataFrame(rows)
-    sty = df.style.applymap(lambda v: "background-color:#E7F3EC;color:#158A5A;font-weight:700"
-                            if v == "✓" else "", subset=list(tasks))
-    st.dataframe(sty, hide_index=True, use_container_width=True)
+        pct = round(done / len(tasks) * 100) if tasks else 0
+        cells = "".join(('<td class="ok">&#10003;</td>' if t in d else "<td></td>") for t in tasks)
+        body += (f'<tr><td class="stn">{CITY[s]} #{s}</td>'
+                 f'<td style="color:{_pcol(pct)};font-weight:700">{pct}%</td>{cells}</tr>')
+    html = ("<style>table.dtm{border-collapse:collapse;font-size:.76rem;width:100%}"
+            "table.dtm th,table.dtm td{border:1px solid #E2E7EE;padding:5px 7px;text-align:center;white-space:nowrap}"
+            "table.dtm th{background:#F7F9FC;color:#5B6472;font-size:.62rem;text-transform:uppercase}"
+            "table.dtm td.stn,table.dtm th.stn{text-align:left;font-weight:600}"
+            "table.dtm td.ok{background:#E7F3EC;color:#158A5A;font-weight:800}"
+            ".dtwrap{overflow-x:auto}</style>"
+            f'<div class="dtwrap"><table class="dtm"><thead><tr><th class="stn">Store</th>'
+            f"<th>%</th>{th}</tr></thead><tbody>{body}</tbody></table></div>")
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _messages_admin(user):
@@ -561,6 +572,23 @@ def _messages_admin(user):
                  "To": labels.get(str(m.get("to_store")), m.get("to_store") or m.get("to_scope")),
                  "From": m.get("from_user"), "Message": m.get("body")} for m in sent]
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        # delete a sent message (admin/DM only)
+        def _mlabel(m):
+            to = labels.get(str(m.get("to_store")), m.get("to_store") or m.get("to_scope"))
+            body = (m.get("body") or "")[:40]
+            return f'{(m.get("sent_at") or "")[:16].replace("T", " ")} · {to} · {body}'
+        opts = {m.get("id"): _mlabel(m) for m in sent if m.get("id") is not None}
+        if opts:
+            dc1, dc2 = st.columns([4, 1])
+            with dc1:
+                pick = st.selectbox("Delete a message", list(opts), format_func=lambda i: opts[i], key="msg_del")
+            with dc2:
+                st.write("")
+                if st.button("Delete", key="msg_del_btn"):
+                    try:
+                        datastore.delete_message(pick); st.success("Deleted."); st.rerun()
+                    except Exception as e:
+                        st.error(f"Couldn't delete: {type(e).__name__}: {e}")
     else:
         st.caption("No messages sent yet.")
 
@@ -574,15 +602,17 @@ def _targets_view(user):
             st.session_state["tgt_editing"] = False; st.rerun()
         return
     st.markdown("#### Store targets")
-    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and "
-               "each Big 4 item are absolute targets. Blank = default.")
+    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and each "
+               "Big 4 item are absolute targets. Values shown are the current targets "
+               "(the standard goals where a store hasn't been customized).")
     cur = datastore.get_targets()
     rows = []
     for s in STORE_CODES:
         t = cur.get(s, {})
         row = {"Store": f"{CITY.get(s, s)} #{s}"}
         for key, lab in _TGT_FIELDS:
-            row[lab] = t.get(key)
+            v = t.get(key)
+            row[lab] = v if v is not None else _TGT_DEFAULTS.get(key)
         rows.append(row)
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
     if st.button("Edit targets", type="primary"):
@@ -592,15 +622,17 @@ def _targets_view(user):
 def _targets_editor(user):
     import pandas as pd
     st.markdown("#### Edit store targets")
-    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and "
-               "each Big 4 item are absolute targets. Leave a cell blank to use the default.")
+    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and each "
+               "Big 4 item are absolute targets. Cells show the current target — edit any value; "
+               "set a cell back to the standard goal to remove a customization.")
     cur = datastore.get_targets()
     rows = []
     for s in STORE_CODES:
         t = cur.get(s, {})
         row = {"Store": f"{CITY.get(s, s)} #{s}", "_id": s}
         for key, lab in _TGT_FIELDS:
-            row[lab] = t.get(key)
+            v = t.get(key)
+            row[lab] = v if v is not None else _TGT_DEFAULTS.get(key)
         rows.append(row)
     df = pd.DataFrame(rows)
     edited = st.data_editor(df, key="targets_editor", hide_index=True,
@@ -609,15 +641,24 @@ def _targets_editor(user):
     name = st.text_input("Your name (saved with each change)", key="tgt_name",
                          placeholder="John Doe")
     if st.button("Save targets", type="primary"):
-        who = identity.attribution(user, name)
-        edits = datastore.target_edits(cur, edited.to_dict("records"), _TGT_FIELDS)
+        who = identity.attribution(user, name); changes = 0
         try:
-            for s, key, val in edits:
-                if val is None:
-                    datastore.delete_target(s, key)
-                else:
-                    datastore.set_target(s, key, val, who)
-            st.success(f"Saved {len(edits)} change(s)." if edits else "No changes to save.")
+            for r in edited.to_dict("records"):
+                s = str(r.get("_id")); t = cur.get(s, {})
+                for key, lab in _TGT_FIELDS:
+                    v = r.get(lab); dflt = _TGT_DEFAULTS.get(key)
+                    if v == "" or (isinstance(v, float) and v != v):
+                        v = None
+                    v = dflt if v is None else float(v)
+                    shown = t.get(key); shown = float(shown) if shown is not None else dflt
+                    if v is None or shown is None or abs(v - shown) < 1e-9:
+                        continue  # unchanged from what was shown
+                    if dflt is not None and abs(v - dflt) < 1e-9:
+                        datastore.delete_target(s, key)  # back to standard goal
+                    else:
+                        datastore.set_target(s, key, v, who)
+                    changes += 1
+            st.success(f"Saved {changes} change(s)." if changes else "No changes to save.")
         except Exception as e:
             st.error(f"Couldn't save targets: {type(e).__name__}: {e}")
 
@@ -637,8 +678,12 @@ def main():
     # V4: admin/DM run the full-width website component with ONE navy left nav (the native
     # sidebar, styled). Trim page gutters; style the sidebar to match the product. Store: as-is.
     elif role == "store":
-        st.markdown("<style>[data-testid='stVerticalBlockBorderWrapper']{background:#FBF4E9;"
-                    "border-color:#E9D9BE!important;border-radius:12px}</style>", unsafe_allow_html=True)
+        st.markdown("<style>[data-testid='stVerticalBlockBorderWrapper']{background:#FBF4E9!important;"
+                    "border:1px solid #E9D9BE!important;border-radius:12px!important}"
+                    "[data-testid='stVerticalBlockBorderWrapper'] *{color:#0F172A}"
+                    "[data-testid='stVerticalBlockBorderWrapper'] .stCaption,"
+                    "[data-testid='stVerticalBlockBorderWrapper'] [data-testid='stCaptionContainer']{color:#8A5A12}"
+                    "</style>", unsafe_allow_html=True)
     elif role in ("admin", "district"):
         st.markdown("""<style>
          .block-container{padding:.4rem .8rem 0!important;max-width:100%!important}
@@ -729,7 +774,7 @@ def main():
     # V4 (C): store login gets the daily-task checklist in the LEFT column (native, so it can
     # save), with the dashboard component on the right. Other tiers render full-width.
     if role == "store" and not mobile:
-        left, right = st.columns([1.25, 5], gap="small")
+        left, right = st.columns([1, 6.5], gap="small")
         with left:
             with st.container(border=True):
                 _task_checklist(user)
