@@ -208,3 +208,9 @@ def mark_read(msg_id):
     _patch("messages", f"id=eq.{_enc(msg_id)}",
            {"read_at": dt.datetime.now(CENTRAL).isoformat()})
     _messages_raw.clear()
+
+
+def delete_message(msg_id):
+    """Remove a sent message (admin/DM only)."""
+    _delete("messages", f"id=eq.{_enc(msg_id)}")
+    _messages_raw.clear()

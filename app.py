@@ -563,34 +563,26 @@ def _messages_admin(user):
         else:
             st.warning("Write a message first.")
     st.markdown("##### Recent messages")
+    st.caption("Each message has its own Delete (admin/DM only).")
     try:
         sent = datastore.get_sent(50)
     except Exception:
         sent = []
-    if sent:
-        rows = [{"Sent": (m.get("sent_at") or "")[:16].replace("T", " "),
-                 "To": labels.get(str(m.get("to_store")), m.get("to_store") or m.get("to_scope")),
-                 "From": m.get("from_user"), "Message": m.get("body")} for m in sent]
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-        # delete a sent message (admin/DM only)
-        def _mlabel(m):
-            to = labels.get(str(m.get("to_store")), m.get("to_store") or m.get("to_scope"))
-            body = (m.get("body") or "")[:40]
-            return f'{(m.get("sent_at") or "")[:16].replace("T", " ")} · {to} · {body}'
-        opts = {m.get("id"): _mlabel(m) for m in sent if m.get("id") is not None}
-        if opts:
-            dc1, dc2 = st.columns([4, 1])
-            with dc1:
-                pick = st.selectbox("Delete a message", list(opts), format_func=lambda i: opts[i], key="msg_del")
-            with dc2:
-                st.write("")
-                if st.button("Delete", key="msg_del_btn"):
-                    try:
-                        datastore.delete_message(pick); st.success("Deleted."); st.rerun()
-                    except Exception as e:
-                        st.error(f"Couldn't delete: {type(e).__name__}: {e}")
-    else:
-        st.caption("No messages sent yet.")
+    if not sent:
+        st.caption("No messages sent yet."); return
+    for m in sent:
+        mid = m.get("id")
+        to = labels.get(str(m.get("to_store")), m.get("to_store") or m.get("to_scope"))
+        c = st.columns([2.1, 2.4, 5, 1.1])
+        c[0].caption((m.get("sent_at") or "")[:16].replace("T", " "))
+        c[1].markdown(f"**{to}**")
+        c[2].markdown(f"{m.get('body','')}  \n<span style='color:#5B6472;font-size:.78rem'>"
+                      f"{m.get('from_user','')}</span>", unsafe_allow_html=True)
+        if mid is not None and c[3].button("Delete", key=f"del_{mid}"):
+            try:
+                datastore.delete_message(mid); st.rerun()
+            except Exception as e:
+                st.error(f"Couldn't delete: {type(e).__name__}: {e}")
 
 
 def _targets_view(user):
