@@ -22,8 +22,9 @@ import calc, dashboard, scorecard_pdf, identity, datastore, web
 from datasource import fetch_today, fetch_history, fetch_days, healthcheck
 from config import BIG4_TARGETS
 
+_sb_state = "expanded" if (st.session_state.get("auth") or (None,))[0] == "admin" else "collapsed"
 st.set_page_config(page_title=f"{BRAND} - Take 5 Scorecard", layout="wide",
-                   initial_sidebar_state="collapsed")
+                   initial_sidebar_state=_sb_state)
 st.markdown("""<style>
  .block-container{padding:1rem 1rem 0;max-width:100%;}
  #MainMenu,footer{visibility:hidden;}
@@ -354,7 +355,8 @@ def build_web_payload(tier, allowed, scope_label, stamp):
         sourced = f"sourced {srcd.strftime('%-I:%M %p')} · {'just now' if mins <= 0 else str(mins) + 'm ago'}"
     regions = (REGIONS if tier == "admin"
                else {k: v for k, v in REGIONS.items() if any(x in allowed for x in v)})
-    return {"tier": tier, "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
+    return {"tier": tier, "mode": "store" if tier == "store" else "full",
+            "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
             "sourced": sourced, "kpis": kpis, "regions": regions, "rows": rows, "detail": detail,
             "hist": {"days": labels, "today": "Today", "stores": hstores, "metric": "cars"}}
 
@@ -367,24 +369,11 @@ def build_web_payload(tier, allowed, scope_label, stamp):
 def _dashboard_view(tier, allowed, scope, mobile):
     now = dt.datetime.now(CENTRAL)
     stamp = now.strftime("%Y-%m-%d-%H-%M")
-    # V4 (B-3): admin & DM get the full-width website component (self-fitting height).
-    if tier in ("admin", "district"):
-        payload = build_web_payload(tier, allowed, scope, stamp)
-        components.html(web.html(payload), height=900, scrolling=True)
-        return
-    # store-login view — unchanged embedded dashboard.
-    payload = build_payload(tier, allowed, scope, stamp)
-    ep = payload.get("sourced_epoch")
-    if ep:
-        srcd = dt.datetime.fromtimestamp(ep, CENTRAL)
-        mins = int((now - srcd).total_seconds() // 60)
-        ago = ("just now" if mins <= 0 else f"{mins} min ago" if mins < 60
-               else f"{mins // 60}h {mins % 60}m ago")
-        st.caption(f"Data last sourced {srcd.strftime('%-I:%M %p')} Central · {ago}")
-    else:
-        st.caption("No data sourced yet today.")
-    height = 6200 if mobile else 3200
-    components.html(dashboard.html(payload, mobile=mobile), height=height, scrolling=True)
+    # V4 (B-3c): every tier renders the website component. Store logins get a store-locked
+    # view (their store only, no nav); admin/DM get the full site. Height is generous +
+    # JS auto-fit trims it to content so there's no empty gap.
+    payload = build_web_payload(tier, allowed, scope, stamp)
+    components.html(web.html(payload), height=(1600 if mobile else 900), scrolling=True)
 
 
 # ---------------- V4 (D): historical performance (DM + admin, read-only) ----------------
@@ -459,10 +448,33 @@ _TGT_FIELDS = ([("cars_boost", "Cars boost %"), ("net_boost", "Net boost %"),
                + [("big4_" + n, n + " %") for n in BIG4_TARGETS])
 
 
+def _targets_view(user):
+    """Read-only targets view with an Edit button (admin left-nav 'Targets' tab)."""
+    import pandas as pd
+    if st.session_state.get("tgt_editing"):
+        _targets_editor(user)
+        if st.button("Done — back to view"):
+            st.session_state["tgt_editing"] = False; st.rerun()
+        return
+    st.markdown("#### Store targets")
+    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and "
+               "each Big 4 item are absolute targets. Blank = default.")
+    cur = datastore.get_targets()
+    rows = []
+    for s in STORE_CODES:
+        t = cur.get(s, {})
+        row = {"Store": f"{CITY.get(s, s)} #{s}"}
+        for key, lab in _TGT_FIELDS:
+            row[lab] = t.get(key)
+        rows.append(row)
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    if st.button("Edit targets", type="primary"):
+        st.session_state["tgt_editing"] = True; st.rerun()
+
+
 def _targets_editor(user):
     import pandas as pd
-    st.markdown("---")
-    st.markdown("#### Admin — store targets")
+    st.markdown("#### Edit store targets")
     st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and "
                "each Big 4 item are absolute targets. Leave a cell blank to use the default.")
     cur = datastore.get_targets()
@@ -555,14 +567,19 @@ def main():
             if st.button("Close guide"):
                 st.session_state["_guide_open"] = False; st.rerun()
 
-    _dashboard_view(tier, allowed, scope, mobile)
-
-    # V4 (B-3): the admin/DM website component now includes Historical, so the old native
-    # _history_section is no longer called (kept in source for reference).
-    # V4 (B-2): admin targets editor — native, below the component (writes stay server-side).
-    # Only on the admin overview, not a single-store drill-in.
+    # V4 (B-3c): left-nav Targets tab (admin). Rendered natively in the sidebar so it's a real
+    # left tab AND saves go through the server (never the browser). Targets is view-first with
+    # an Edit button; the dashboard component keeps its own instant section nav + drill-in.
     if role == "admin" and tier == "admin":
-        _targets_editor(user)
+        with st.sidebar:
+            st.markdown("**Admin**")
+            amode = st.radio("Section", ["Dashboard", "Targets"], key="admin_mode",
+                             label_visibility="collapsed")
+        if amode == "Targets":
+            _targets_view(user)
+            return
+
+    _dashboard_view(tier, allowed, scope, mobile)
 
 
 if __name__ == "__main__":

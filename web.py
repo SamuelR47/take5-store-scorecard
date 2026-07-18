@@ -75,6 +75,8 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .kpi .l{font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800}
 .kpi .v{font-size:1.6rem;font-weight:800;letter-spacing:-1px;margin-top:2px}
+.kpi .vsub{font-size:.78rem;color:var(--mute);font-weight:700;letter-spacing:0}
+.storesel{margin-left:auto;padding:7px 11px;border:1px solid var(--line);border-radius:8px;font-weight:700;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer}
 .kpi .d{font-size:.74rem;font-weight:700;margin-top:2px}
 .kpi.bt{border-top:3px solid var(--blue)}.kpi.gt{border-top:3px solid var(--green)}.kpi.at{border-top:3px solid var(--amber)}
 .kpi.tt{border-top:3px solid var(--teal)}.kpi.nt{border-top:3px solid var(--navy)}
@@ -126,7 +128,7 @@ tbody tr{cursor:pointer}tbody tr:hover{background:var(--soft)}tr:last-child td{b
 <script>
 const P=/*__PAYLOAD__*/;
 const C={navy:'#14273F',red:'#D0342C',blue:'#2E6FB7',green:'#158A5A',amber:'#B57611',teal:'#0E7490',purple:'#6C4FB6',mute:'#5B6472',line:'#E2E7EE'};
-const ch={};let OVMODE='rank',OVMETRIC='cars',SEL=(P.rows[0]||{}).id;
+const ch={};const STORE=(P.mode==='store');let OVMODE='table',OVMETRIC='cars',SEL=(P.rows[0]||{}).id;
 const ICON={overview:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
  detail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>',
  hist:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>'};
@@ -142,12 +144,12 @@ function shell(){
  <div class="app">
   <aside class="side">
    <div class="brand">VantEdge Auto<small>Take 5 · Scorecard</small></div>
-   <nav>
+   <nav>${STORE?'':`
     <button data-v="overview" class="on" onclick="nav('overview')">${ICON.overview}Overview</button>
     <button data-v="detail" onclick="nav('detail')">${ICON.detail}Store detail</button>
-    <button data-v="hist" onclick="nav('hist')">${ICON.hist}Historical</button>
+    <button data-v="hist" onclick="nav('hist')">${ICON.hist}Historical</button>`}
    </nav>
-   <div class="sfoot">${P.tier==='admin'?'Admin view':'District view'}</div>
+   <div class="sfoot">${STORE?'Store view':(P.tier==='admin'?'Admin view':'District view')}</div>
   </aside>
   <main class="main">
    <div class="topbar"><div class="scopeName" id="scopeName">${P.scopeName||''}</div>
@@ -175,7 +177,7 @@ function overview(){const k=P.kpis||{};
    <div class="kpi tt"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4>=53?'pos':'amb'}">goal 53%</div></div>
   </div>
   <div class="row" style="margin-top:16px">
-   <div class="seg"><button class="on" onclick="ovv(this,'rank')">Store ranking</button><button onclick="ovv(this,'graph')">Graphs</button><button onclick="ovv(this,'table')">Table</button></div>
+   <div class="seg"><button onclick="ovv(this,'rank')">Store ranking</button><button onclick="ovv(this,'graph')">Graphs</button><button class="on" onclick="ovv(this,'table')">Table</button></div>
    <div class="seg" id="ovm" style="display:none">${['cars','big4','aro','net','lhpc'].map((m,i)=>`<button class="${i===0?'on':''}" onclick="ovmet(this,'${m}')">${m==='aro'?'ARO':m==='lhpc'?'LHPC':m==='big4'?'Big 4':m[0].toUpperCase()+m.slice(1)}</button>`).join('')}</div>
    <span class="sub" id="ovmNote" style="display:none">current hour · click a bar to open the store</span>
   </div>
@@ -217,21 +219,23 @@ function openStore(id){SEL=id;nav('detail');document.querySelectorAll('.side nav
 function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('v_detail');
  if(!d){el.innerHTML='<div class="empty">Select a store from Overview.</div>';return;}
  const k=d.kpi;
- el.innerHTML=`<div class="crumb"><a onclick="nav('overview')">Overview</a> › <b>${d.name} · #${d.id}</b></div>
-  <div class="row"><div class="scopeName">${d.name} <span class="sub">#${d.id} · ${d.region||''} · opened ${d.open||'—'}</span></div></div>
+ const sw=STORE?'':`<select class="storesel" onchange="openStore(this.value)" title="Switch store">${P.rows.map(r=>`<option value="${r.id}" ${String(r.id)===String(SEL)?'selected':''}>${r.name} #${r.id}</option>`).join('')}</select>`;
+ const crumb=STORE?'':`<div class="crumb"><a onclick="nav('overview')">Overview</a> › <b>${d.name} · #${d.id}</b></div>`;
+ el.innerHTML=`${crumb}
+  <div class="row"><div class="scopeName">${d.name} <span class="sub">#${d.id} · ${d.region||''} · opened ${d.open||'—'}</span></div>${sw}</div>
   <div class="kpis">
-   <div class="kpi bt"><div class="l">Cars</div><div class="v">${k.cars}</div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} · 4-wk ${k.carsNorm??'—'}</div></div>
-   <div class="kpi at"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
-   <div class="kpi gt"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()}</div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} · 4-wk $${k.netNorm??'—'}</div></div>
-   <div class="kpi tt"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
-   <div class="kpi nt"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
+   <div class="kpi bt" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm??'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm??'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
+   <div class="kpi at" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
+   <div class="kpi gt" title="Net so far $${Math.round(k.net).toLocaleString()} · 4-week average by this hour $${k.netNorm??'—'} · ${pc(k.netPace)} vs that average"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()} <span class="vsub">/ $${k.netNorm??'—'} 4-wk</span></div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} vs 4-wk</div></div>
+   <div class="kpi tt" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
+   <div class="kpi nt" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
   </div>
   ${cumSection('Cars',d.cars,C.blue,'cars',d)}
   ${aroSection(d)}
   ${cumSection('Net revenue',d.net,C.green,'net',d)}
   ${big4Section(d)}
   ${lhpcSection(d)}`;
- drawDetail(d);
+ drawMain(d);
 }
 function band(){return '<div class="band"><div>Morning</div><div>Afternoon</div><div>Evening</div></div>';}
 function cumSection(title,m,color,key,d){
@@ -266,36 +270,61 @@ function lhpcSection(d){const l=d.lhpc;
   <div class="mrow"><div class="boxes"><div class="box clickable" onclick="tog('lhx')"><div class="bl">Rolling <span class="chev">▾</span></div><div class="triple"><div><div class="big">${(+l.day).toFixed(2)}</div><div class="cap">rolling</div></div><div><div class="mid ${l.variance<=0?'pos':'neg'}">${l.variance>0?'+':''}${(+l.variance).toFixed(2)}</div><div class="cap">variance</div></div><div><div class="big">${(+l.target).toFixed(2)}</div><div class="cap">target</div></div></div><div class="expand" id="lhx"><div class="sub">Rolling = cumulative labor hours ÷ cumulative cars for the day. Lower is leaner.</div></div></div></div>
    <div><div class="chartbox" style="height:196px"><canvas id="c_lhpc"></canvas></div></div></div></div>`;
 }
-function tog(id){const e=document.getElementById(id);if(!e)return;e.classList.toggle('open');const d=(P.detail||{})[SEL];if(e.classList.contains('open'))drawDetail(d);fitLater();}
+// Clicking a KPI box only draws its own pop-out mini-chart — never re-renders the main charts.
+function tog(id){const e=document.getElementById(id);if(!e)return;const open=!e.classList.contains('open');e.classList.toggle('open');
+ const d=(P.detail||{})[SEL];
+ if(open){ if(id==='carswk')drawWk(d,'cars'); else if(id==='netwk')drawWk(d,'net');
+           else if(id.indexOf('arod')===0)drawDriver(d,+id.slice(4)); else if(id==='b4u')drawB4units(d); }
+ fitLater();}
 
 function lineTgt(v){return {type:'line',label:'Target',data:v,borderColor:C.red,borderDash:[2,3],borderWidth:1.6,pointRadius:0};}
-function drawDetail(d){const L=d.hours;
+
+// The five main section charts — drawn once when the detail view renders.
+function drawMain(d){const L=d.hours;
  ['cars','net'].forEach(key=>{const m=d[key];if(!document.getElementById('c_'+key))return;
   mk('c_'+key,{data:{labels:L,datasets:[
    {type:'line',label:'Actual',data:m.actual,borderColor:C.blue,backgroundColor:'rgba(46,111,183,.10)',fill:true,borderWidth:2.6,tension:.35},
    {type:'line',label:'Projected',data:m.est,borderColor:C.green,borderDash:[6,4],borderWidth:2.2,tension:.35},
-   m.target?lineTgt(m.target):{data:[]}]},
+   (m.target&&m.target.length)?lineTgt(m.target):{data:[]}]},
    options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:C.line}}}}});
-  const wk=m.wk||[];const wl=wk.map(x=>x.date).concat(['Today']);const wv=wk.map(x=>x.val).concat([m.sofar]);
-  if(document.getElementById('c_'+key+'wk'))mk('c_'+key+'wk',{type:'bar',data:{labels:wl,datasets:[{data:wv,backgroundColor:wl.map((_,i)=>i===wl.length-1?C.blue:'#B5D4F4')}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
  });
  const a=d.aro;if(document.getElementById('c_aro'))mk('c_aro',{data:{labels:L,datasets:[
    {type:'line',label:'ARO',data:a.run,borderColor:C.blue,backgroundColor:'rgba(46,111,183,.08)',fill:true,borderWidth:2.4,tension:.35},
    lineTgt(L.map(()=>a.target||125))]},options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{grid:{color:C.line}}}}});
- (d.drivers||[]).slice(0,2).forEach((x,i)=>{const cv=document.getElementById('c_arod'+i);if(!cv)return;const c=x.chart||{};
-  if(c.type==='bars')mk('c_arod'+i,{type:'bar',data:{labels:(c.data||[]).map(z=>z.name),datasets:[{label:'attach',data:(c.data||[]).map(z=>z.attach),backgroundColor:C.teal},{label:'target',data:(c.data||[]).map(z=>z.target),backgroundColor:C.line}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
-  else if(c.type==='pair')mk('c_arod'+i,{type:'bar',data:{labels:(c.data||[]).map(z=>z.name),datasets:[{data:(c.data||[]).map(z=>z.val),backgroundColor:C.amber}]},options:{...G,indexAxis:'y',scales:{x:{display:false},y:{grid:{display:false}}}}});
-  else mk('c_arod'+i,{type:'bar',data:{labels:['now','target'],datasets:[{data:[(c.data||{}).val||0,(c.data||{}).target||0],backgroundColor:[C.amber,C.line]}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
- });
  const b=d.big4;if(document.getElementById('c_big4'))mk('c_big4',{data:{labels:L,datasets:[
    {type:'line',label:'Big 4 %',data:b.run,borderColor:C.teal,backgroundColor:'rgba(14,116,144,.10)',fill:true,borderWidth:2.4,tension:.35},
    {type:'line',label:'goal',data:L.map(()=>b.target),borderColor:C.green,borderDash:[4,3],borderWidth:1.4,pointRadius:0}]},options:{...G,scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:C.line}}}}});
- if(document.getElementById('c_b4units'))mk('c_b4units',{type:'bar',data:{labels:(b.items||[]).map(x=>x.name),datasets:[{data:(b.items||[]).map(x=>x.units||0),backgroundColor:C.teal}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
  const l=d.lhpc;if(document.getElementById('c_lhpc'))mk('c_lhpc',{data:{labels:L,datasets:[
    {type:'bar',label:'hours',data:l.hours,backgroundColor:'rgba(108,79,182,.18)',yAxisID:'y1'},
    {type:'line',label:'rolling',data:l.roll,borderColor:C.purple,borderWidth:2.4,tension:.35,yAxisID:'y'},
    {type:'line',label:'target',data:L.map(()=>l.target),borderColor:C.red,borderDash:[2,3],borderWidth:1.4,yAxisID:'y',pointRadius:0}]},
    options:{...G,scales:{x:{grid:{display:false}},y:{position:'left',min:0,max:5,grid:{color:C.line}},y1:{position:'right',min:0,grid:{display:false}}}}});
+}
+
+// 4-week drill-in: value labels on every bar + a dashed average line through the historical bars.
+function drawWk(d,key){const m=d[key];const wk=m.wk||[];const hv=wk.map(x=>x.val);
+ const wl=wk.map(x=>x.date).concat(['Today']);const wv=hv.concat([m.sofar]);
+ const avg=hv.length?hv.reduce((a,b)=>a+b,0)/hv.length:0;
+ const lab=v=>key==='net'?Math.round(v).toLocaleString():Math.round(v);
+ const plug={id:'wk',afterDatasetsDraw:c=>{const{ctx}=c;const meta=c.getDatasetMeta(0).data;ctx.save();
+   ctx.font='700 10px -apple-system,sans-serif';ctx.fillStyle='#0F172A';ctx.textAlign='center';
+   meta.forEach((bar,i)=>{if(wv[i]!=null)ctx.fillText(lab(wv[i]),bar.x,bar.y-4);});
+   if(hv.length){const y=c.scales.y.getPixelForValue(avg);const x0=meta[0].x-16,x1=meta[hv.length-1].x+16;
+     ctx.strokeStyle='#14273F';ctx.setLineDash([5,4]);ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+     ctx.setLineDash([]);ctx.fillStyle='#14273F';ctx.textAlign='left';ctx.fillText('avg '+lab(avg),x1+3,y-2);}
+   ctx.restore();}};
+ mk('c_'+key+'wk',{type:'bar',data:{labels:wl,datasets:[{data:wv,backgroundColor:wl.map((_,i)=>i===wl.length-1?C.blue:'#B5D4F4'),borderRadius:3}]},
+  options:{...G,layout:{padding:{top:16,right:40}},plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});
+}
+
+function drawDriver(d,i){const x=(d.drivers||[])[i];if(!x||!document.getElementById('c_arod'+i))return;const c=x.chart||{};
+ if(c.type==='bars')mk('c_arod'+i,{type:'bar',data:{labels:(c.data||[]).map(z=>z.name),datasets:[{label:'attach',data:(c.data||[]).map(z=>z.attach),backgroundColor:C.teal},{label:'target',data:(c.data||[]).map(z=>z.target),backgroundColor:C.line}]},options:{...G,scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false}}}});
+ else if(c.type==='pair')mk('c_arod'+i,{type:'bar',data:{labels:(c.data||[]).map(z=>z.name),datasets:[{data:(c.data||[]).map(z=>z.val),backgroundColor:C.amber}]},options:{...G,indexAxis:'y',scales:{x:{display:false},y:{grid:{display:false}}}}});
+ else mk('c_arod'+i,{type:'bar',data:{labels:['now','target'],datasets:[{data:[(c.data||{}).val||0,(c.data||{}).target||0],backgroundColor:[C.amber,C.line]}]},options:{...G,scales:{x:{grid:{display:false}},y:{display:false}}}});
+}
+
+function drawB4units(d){const b=d.big4;if(!document.getElementById('c_b4units'))return;
+ mk('c_b4units',{type:'bar',data:{labels:(b.items||[]).map(x=>x.name),datasets:[{data:(b.items||[]).map(x=>x.units||0),backgroundColor:C.teal,borderRadius:3}]},options:{...G,scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false}}}});
 }
 
 /* ---------- historical ---------- */
@@ -325,6 +354,6 @@ function drawHist(){const h=P.hist||{stores:[],days:[]};const sel=(h.stores||[])
 function fit(){try{if(window.frameElement){window.frameElement.style.height=Math.max(680,document.documentElement.scrollHeight+8)+'px';}}catch(e){}}
 function fitLater(){setTimeout(fit,90);}
 const _render=render;render=function(v){_render(v);fitLater();};
-shell();overview();fitLater();
+shell();if(STORE){nav('detail');}else{overview();}fitLater();
 </script>
 """
