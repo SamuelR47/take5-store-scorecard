@@ -271,6 +271,9 @@ def build_store(store, city, region, today_rows, hist, now, targets=None):
     tg=resolve_targets(targets,cars_fn,net_fn)
     cars["tgt"]=tg["cars"]["value"]; cars["tgtSrc"]=tg["cars"]["source"]
     net["tgt"]=tg["net"]["value"];   net["tgtSrc"]=tg["net"]["source"]
+    # Non-linear target line: normal-day cumulative shape scaled to the full-day target.
+    cars["target_curve"]=target_series(hist,weekday,"cars",hours,cars["tgt"],td)
+    net["target_curve"] =target_series(hist,weekday,"net_sales",hours,net["tgt"],td)
     aro["target"]=tg["aro"]["value"]; aro["tgtSrc"]=tg["aro"]["source"]
     if aro["sofar"]: aro["gap_pct"]=round((aro["sofar"]/tg["aro"]["value"]-1)*100,1)
     bb=latest.get("big4") or {}
@@ -492,6 +495,24 @@ def lhpc_variance(rolling, target):
     if rolling is None or target is None: return None
     return round(rolling-target,2)
 
+def norm_profile(hist, weekday, key, hours, exclude_date=None):
+    """Normalized 0..1 cumulative shape of a normal day for this metric, from the simple
+    4-week same-weekday per-hour increments. Used to SHAPE the target line so it follows a
+    typical day instead of a straight ramp."""
+    sn=simple_norm(hist,weekday,key,exclude_date)
+    cum=[]; run=0.0
+    for h in hours:
+        run+=sn.get(h,0.0); cum.append(run)
+    last=cum[-1] if cum else 0.0
+    return [(c/last if last else 0.0) for c in cum]
+
+def target_series(hist, weekday, key, hours, tgt, exclude_date=None):
+    """Target line across the day = the normal-day cumulative shape scaled to end at the
+    full-day target (4-week avg x (1+boost)). NOT linear."""
+    if tgt is None: return []
+    prof=norm_profile(hist,weekday,key,hours,exclude_date)
+    return [round(p*tgt,2) for p in prof]
+
 def drivers_for_aro(latest, aro_sofar, aro_target, aro_norm, big4_items, cars):
     """Rule-based, ranked explanation of WHY ARO sits where it does, using only data we
     already have. Returns drivers sorted by severity (biggest first); the store view fills
@@ -503,49 +524,67 @@ def drivers_for_aro(latest, aro_sofar, aro_target, aro_norm, big4_items, cars):
     ahead/behind and degrade gracefully when a signal is missing."""
     cars=cars or 0
     out=[]
-    # 1) lowest Big 4 item vs its target (attach room = ticket room)
+    # 1) Big 4 attach — the lowest item drags ARO, or strong attach is padding it.
     if big4_items:
         worst=min(big4_items,key=lambda it:(it["attach"]-it["target"]))
+        best =max(big4_items,key=lambda it:(it["attach"]-it["target"]))
         gap=worst["target"]-worst["attach"]
-        if gap>0:
-            out.append({"key":"big4","title":"Big 4 attach","score":gap,
+        chart={"type":"bars","title":"Big 4 attach vs target",
+               "data":[{"name":it["name"],"attach":it["attach"],"target":it["target"]} for it in big4_items]}
+        if gap>2:
+            out.append({"key":"big4","title":"Big 4 attach","score":gap+4,
                 "status":"r" if gap>=worst["target"]*0.4 else "a",
-                "message":(f"{worst['name']} is attaching {worst['attach']:g}% vs a "
-                           f"{worst['target']:g}% target — the biggest Big 4 gap. "
-                           f"Push-selling it adds revenue per car."),
-                "chart":{"type":"bars","title":"Big 4 attach vs target",
-                         "data":[{"name":it["name"],"attach":it["attach"],"target":it["target"]}
-                                 for it in big4_items]}})
-    # 2) discount + coupon load per car
+                "message":(f"{worst['name']} is attaching {worst['attach']:g}% vs a {worst['target']:g}% "
+                           f"target - the biggest Big 4 gap. Push-selling it is the clearest lever on $/car."),
+                "chart":chart})
+        else:
+            out.append({"key":"big4","title":"Big 4 attach","score":2,
+                "status":"g",
+                "message":(f"Big 4 is well attached - {best['name']} at {best['attach']:g}% "
+                           f"(target {best['target']:g}%) is padding the ticket. Keep it up."),
+                "chart":chart})
+    # 2) Discount + coupon load per car - a direct drag when high, a help when disciplined.
     disc=float(latest.get("discounts") or 0); coup=float(latest.get("coupons") or 0)
     per=((disc+coup)/cars) if cars else 0
-    if per>0:
+    chartgb={"type":"pair","title":"$ per car",
+             "data":[{"name":"Discounts","val":round(disc/cars,2) if cars else 0},
+                     {"name":"Coupons","val":round(coup/cars,2) if cars else 0}]}
+    if per>=4:
         out.append({"key":"givebacks","title":"Discounts & coupons","score":per,
-            "status":"a" if per>=5 else "flat",
-            "message":(f"Discounts + coupons are running ${per:.0f}/car "
-                       f"(${disc+coup:,.0f} today). Trimming redemptions flows to ARO."),
-            "chart":{"type":"pair","title":"$ per car",
-                     "data":[{"name":"Discounts","val":round(disc/cars,2) if cars else 0},
-                             {"name":"Coupons","val":round(coup/cars,2) if cars else 0}]}})
-    # 3) differential attach % of cars vs target
-    dd=differentials(latest.get("line_items"))
-    dpct=(dd["units"]/cars*100) if cars else 0
+            "status":"a" if per>=6 else "flat",
+            "message":(f"Discounts + coupons are running ${per:.0f}/car (${disc+coup:,.0f} today) - "
+                       f"that comes straight off ARO. Tightening approvals lifts the ticket."),"chart":chartgb})
+    elif per>0:
+        out.append({"key":"givebacks","title":"Discounts & coupons","score":2,"status":"g",
+            "message":(f"Give-backs are light at ${per:.0f}/car - discipline here is protecting ARO."),
+            "chart":chartgb})
+    # 3) Differential attach - a high-margin add that moves the ticket.
+    dd=differentials(latest.get("line_items")); dpct=(dd["units"]/cars*100) if cars else 0
+    chartd={"type":"gauge","title":"Differential % of cars","data":{"val":round(dpct,1),"target":DIFF_TARGET}}
     if dpct<DIFF_TARGET:
-        out.append({"key":"diff","title":"Differentials","score":(DIFF_TARGET-dpct),
-            "status":"a",
-            "message":(f"Differentials on {dpct:.0f}% of cars vs ~{DIFF_TARGET}% target — "
-                       f"each one lifts the ticket."),
-            "chart":{"type":"gauge","title":"Differential % of cars",
-                     "data":{"val":round(dpct,1),"target":DIFF_TARGET}}})
-    # 4) ticket vs its own 4-week norm (the summary lever)
+        out.append({"key":"diff","title":"Differentials","score":(DIFF_TARGET-dpct)+1,"status":"a",
+            "message":(f"Differentials on only {dpct:.0f}% of cars vs ~{DIFF_TARGET}% - each one is a "
+                       f"high-margin add. More differential sales raise the ticket."),"chart":chartd})
+    else:
+        out.append({"key":"diff","title":"Differentials","score":1.5,"status":"g",
+            "message":(f"Differentials on {dpct:.0f}% of cars (>= {DIFF_TARGET}% target) are lifting ARO."),
+            "chart":chartd})
+    # 4) Ancillary sales average.
+    asa=float(latest.get("asa") or 0)
+    if asa:
+        out.append({"key":"asa","title":"Ancillary sales","score":abs(asa-12)/4+0.5,
+            "status":"g" if asa>=12 else "a",
+            "message":(f"Ancillary sales average ${asa:.0f}/car - "
+                       f"{'a solid add on top of the core ticket' if asa>=12 else 'light; wiper/cabin-air/fluid upsells would lift ARO'}."),
+            "chart":{"type":"pair","title":"ASA","data":[{"name":"Today","val":round(asa,2)},{"name":"~target","val":12}]}})
+    # 5) Ticket vs its own 4-week norm - the summary lever.
     if aro_sofar is not None and aro_norm:
         gap=aro_norm-aro_sofar
         out.append({"key":"ticket","title":"Ticket vs normal","score":abs(gap),
             "status":"r" if gap>5 else ("a" if gap>0 else "g"),
-            "message":(f"Average ticket ${aro_sofar:.0f} — ${abs(gap):.0f} "
+            "message":(f"Average ticket ${aro_sofar:.0f} is ${abs(gap):.0f} "
                        f"{'below' if gap>0 else 'above'} the 4-week norm of ${aro_norm:.0f}."),
             "chart":{"type":"pair","title":"ARO vs 4-week",
-                     "data":[{"name":"Today","val":round(aro_sofar,2)},
-                             {"name":"4-wk","val":round(aro_norm,2)}]}})
+                     "data":[{"name":"Today","val":round(aro_sofar,2)},{"name":"4-wk","val":round(aro_norm,2)}]}})
     out.sort(key=lambda d:d["score"],reverse=True)
     return out

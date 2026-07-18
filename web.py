@@ -115,6 +115,52 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .tag{font-size:.62rem;font-weight:800;padding:2px 7px;border-radius:5px;margin-left:6px}
 .tag.r{background:var(--rbg);color:var(--red)}.tag.a{background:var(--abg);color:var(--amber)}.tag.g{background:var(--gbg);color:var(--green)}
 .crumb{font-size:.8rem;color:var(--mute);margin-bottom:2px}.crumb a{color:var(--blue);cursor:pointer;font-weight:600}
+.big4grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}
+.bulletlabel{font-size:.61rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);font-weight:800;margin:0 0 10px}
+.bullet{display:grid;grid-template-columns:78px 1fr 64px;align-items:center;gap:8px;margin:8px 0}
+.bn{font-size:.72rem;color:var(--ink);font-weight:600}
+.track{position:relative;height:9px;background:#EEF1F5;border-radius:5px}
+.fill{position:absolute;left:0;top:0;height:9px;border-radius:5px}
+.tmark{position:absolute;top:-2px;width:2px;height:13px;background:var(--ink)}
+.bv{font-size:.7rem;font-weight:800;text-align:right}
+.ops{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.o{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:var(--soft)}
+.ol{font-size:.61rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:800}
+.ov{font-size:1.05rem;font-weight:800;margin-top:2px}
+.os{font-size:.68rem;color:var(--mute)}
+@media(max-width:820px){.big4grid{grid-template-columns:1fr}}
+.heatscroll{overflow-x:auto}
+table.heat{border-collapse:collapse;font-size:.72rem;min-width:100%}
+table.heat th,table.heat td{border:1px solid #EEF1F5;padding:3px 6px;text-align:center;white-space:nowrap}
+table.heat th{background:var(--soft);color:var(--mute);font-weight:700}
+.heat .hh{text-align:left;color:var(--mute);font-weight:700;background:var(--soft)}
+.heat .hid{color:var(--mute);font-weight:500;font-size:.62rem}
+.picker{margin:4px 0 12px}
+.pickrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.rpill{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 12px;font-size:.78rem;font-weight:700;cursor:pointer;color:var(--mute)}
+.rpill.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.spill{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;font-size:.78rem;font-weight:600;cursor:pointer;color:var(--ink)}
+.spill.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.detailwrap{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
+.dmain{min-width:0}
+.dmsg{position:sticky;top:8px}
+.msgbox{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.msgh{font-weight:800;font-size:.9rem;margin-bottom:10px}
+.msg{border-left:3px solid var(--blue);background:var(--soft);border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:8px}
+.msgb{font-size:.82rem;color:var(--ink)}
+.msgm{font-size:.68rem;color:var(--mute);margin-top:4px}
+.msgempty{color:var(--mute);font-size:.8rem}
+.chipbtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;font-size:.76rem;font-weight:700;cursor:pointer;color:var(--navy)}
+.sctiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px}
+.sctile{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:var(--soft)}
+.sctile.pos{background:var(--gbg)}.sctile.neg{background:var(--rbg)}.sctile.amb{background:var(--abg)}
+.sctile .l{font-size:.6rem;text-transform:uppercase;color:var(--mute);font-weight:800}
+.sctile .v{font-size:1.15rem;font-weight:800;margin-top:2px}
+.scrow{display:flex;gap:10px;flex-wrap:wrap}
+.scbtn{background:var(--navy);color:#fff;border-radius:8px;padding:9px 16px;font-size:.82rem;font-weight:800;text-decoration:none;cursor:pointer}
+.scbtn.dis{background:#CBD5E1;color:#fff;cursor:default}
+@media(max-width:820px){.sctiles{grid-template-columns:1fr 1fr}}
+@media(max-width:900px){.detailwrap{grid-template-columns:1fr}.dmsg{position:static}}
 table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
 th,td{padding:9px 12px;font-size:.82rem;text-align:right;border-bottom:1px solid var(--line)}
 th:first-child,td:first-child{text-align:left}
@@ -128,7 +174,7 @@ tbody tr{cursor:pointer}tbody tr:hover{background:var(--soft)}tr:last-child td{b
 <script>
 const P=/*__PAYLOAD__*/;
 const C={navy:'#14273F',red:'#D0342C',blue:'#2E6FB7',green:'#158A5A',amber:'#B57611',teal:'#0E7490',purple:'#6C4FB6',mute:'#5B6472',line:'#E2E7EE'};
-const ch={};const STORE=(P.mode==='store');let OVMODE='table',OVMETRIC='cars',SEL=(P.rows[0]||{}).id;
+const ch={};const STORE=(P.mode==='store');let OVMODE='table',OVMETRIC='cars',SEL=(P.rows[0]||{}).id,PICKREG=null;
 const ICON={overview:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
  detail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>',
  hist:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>'};
@@ -143,7 +189,7 @@ function shell(){
  document.getElementById('root').innerHTML=`
  <div class="app">
   <main class="main">
-   <div class="topbar"><div class="scopeName" id="scopeName">${P.scopeName||''}</div>
+   <div class="topbar"><div class="scopeName" id="scopeName">${STORE?'':(P.scopeName||'')}</div>
     <div class="meta"><span><span class="dot"></span>live · ${P.asof||''}</span><span>${P.sourced||''}</span></div></div>
    <section class="view on" id="v_overview"></section>
    <section class="view" id="v_detail"></section>
@@ -174,11 +220,21 @@ function overview(){const k=P.kpis||{};
   </div>
   <div id="ov_body"></div>
   <h2 class="sh">Big 4 by store <span class="sub">attach % of cars · goal line 53%</span></h2>
-  <div class="panel"><div class="chartbox tall"><canvas id="c_b4store"></canvas></div></div>`;
- ovBody();b4store();
+  <div class="panel"><div class="chartbox tall"><canvas id="c_b4store"></canvas></div></div>
+  <h2 class="sh">Heat map <span class="sub">cars per hour · darker = busier · absolute scale across stores</span></h2>
+  <div id="ov_heat"></div>`;
+ ovBody();b4store();renderHeat();
 }
 let REGION='All';
-function regfilter(b,r){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');REGION=r;ovBody();b4store();}
+function regfilter(b,r){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');REGION=r;ovBody();b4store();renderHeat();}
+function renderHeat(){const el=document.getElementById('ov_heat');if(el)el.innerHTML=heatmap();}
+function heatmap(){const R=rowsF().filter(s=>s.heat&&s.heat.length);const hh=P.heatHours||[];
+ if(!R.length||!hh.length)return '<div class="empty">No heat data.</div>';
+ const allv=R.flatMap(s=>s.heat.filter(v=>v!=null));const mx=Math.max(1,...allv);
+ const cell=v=>{if(v==null||v==='')return '<td style="background:#F9FAFB"></td>';const a=Math.min(1,v/mx);return `<td style="background:rgba(46,111,183,${(0.06+a*0.72).toFixed(2)});color:${a>0.5?'#fff':'#0F172A'}" title="${v} cars">${v||''}</td>`;};
+ let h='<div class="panel" style="padding:10px"><div class="heatscroll"><table class="heat"><thead><tr><th class="hh">Hour</th>'+R.map(s=>`<th title="${s.name} #${s.id}">${s.name} <span class="hid">#${s.id}</span></th>`).join('')+'</tr></thead><tbody>';
+ hh.forEach((lab,i)=>{h+='<tr><td class="hh">'+lab+'</td>'+R.map(s=>cell(s.heat[i])).join('')+'</tr>';});
+ h+='</tbody></table></div></div>';return h;}
 function ovv(b,m){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');OVMODE=m;
  document.getElementById('ovm').style.display=m==='graph'?'inline-flex':'none';
  document.getElementById('ovmNote').style.display=m==='graph'?'inline':'none';ovBody();}
@@ -204,16 +260,16 @@ function b4store(){const arr=rowsF().map(s=>({n:s.name+' '+s.id,v:s.big4,id:s.id
  mk('c_b4store',{type:'bar',data:{labels:arr.map(a=>a.n),datasets:[{data:arr.map(a=>a.v),backgroundColor:arr.map(a=>a.v>=53?C.green:(a.v>=32?C.amber:C.red)),borderRadius:4}]},
   options:{...G,indexAxis:'y',onClick:(e,el)=>{if(el[0])openStore(arr[el[0].index].id);},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Big 4: '+Math.round(c.parsed.x)+'%'}}},scales:{x:{grid:{color:C.line},suggestedMax:100},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
 }
-function openStore(id){SEL=id;nav('detail');document.querySelectorAll('.side nav button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')==='detail'));}
+function openStore(id){SEL=id;PICKREG=null;nav('detail');}
 
 /* ---------- detail ---------- */
 function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('v_detail');
  if(!d){el.innerHTML='<div class="empty">Select a store from Overview.</div>';return;}
  const k=d.kpi;
- const sw=STORE?'':`<select class="storesel" onchange="openStore(this.value)" title="Switch store">${P.rows.map(r=>`<option value="${r.id}" ${String(r.id)===String(SEL)?'selected':''}>${r.name} #${r.id}</option>`).join('')}</select>`;
  const crumb=STORE?'':`<div class="crumb"><a onclick="nav('overview')">Overview</a> › <b>${d.name} · #${d.id}</b></div>`;
  el.innerHTML=`${crumb}
-  <div class="row"><div class="scopeName">${d.name} <span class="sub">#${d.id} · ${d.region||''} · opened ${d.open||'—'}</span></div>${sw}</div>
+  <div class="row"><div class="scopeName">${d.name} <span class="sub">#${d.id} · ${d.region||''} · opened ${d.open||'—'}</span></div></div>
+  ${STORE?'':`<div id="picker">${storePicker()}</div>`}
   <div class="kpis">
    <div class="kpi bt" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm??'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm??'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
    <div class="kpi at" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
@@ -221,12 +277,35 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
    <div class="kpi tt" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
    <div class="kpi nt" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
   </div>
+  <div class="detailwrap"><div class="dmain">
   ${cumSection('Cars',d.cars,C.blue,'cars',d)}
   ${aroSection(d)}
   ${cumSection('Net revenue',d.net,C.green,'net',d)}
   ${big4Section(d)}
-  ${lhpcSection(d)}`;
+  ${lhpcSection(d)}
+  ${scoreSection(d)}
+  ${opsSection(d)}
+  </div><aside class="dmsg">${msgPanel(d)}</aside></div>`;
  drawMain(d);
+}
+function scoreSection(d){const sc=d.scorecards||{};const k=d.kpi;
+ const dl=(b64,fn,label)=>b64?`<a class="scbtn" href="data:application/pdf;base64,${b64}" download="${fn}">${label}</a>`:`<span class="scbtn dis">${label} (n/a)</span>`;
+ const tiles=[['Cars',k.cars,scls(k.carsStatus)],['ARO','$'+Math.round(k.aro),scls(k.aroStatus)],['Net','$'+Math.round(k.net).toLocaleString(),scls(k.netStatus)],['Big 4',Math.round(k.big4)+'%',scls(k.big4Status)],['LHPC',(+k.lhpc).toFixed(2),scls(k.lhpcStatus)]]
+  .map(t=>`<div class="sctile ${t[2]}"><div class="l">${t[0]}</div><div class="v">${t[1]}</div></div>`).join('');
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.navy}"></div><span class="t">Score cards</span><span class="n">today's KPIs + printable cards</span></div>
+  <div class="sctiles">${tiles}</div>
+  <div class="scrow">${dl(sc.today,d.id+'_today.pdf','Today')}${dl(sc.yesterday,d.id+'_yesterday.pdf','Yesterday'+(sc.ylabel||''))}${dl(sc.week,d.id+'_week.pdf','Last 7 days')}</div></div>`;
+}
+function storePicker(){if(STORE)return '';const regs=P.regions||{};let cur=PICKREG;
+ if(!cur){for(const r in regs){if((regs[r]||[]).map(String).includes(String(SEL))){cur=r;break;}}cur=cur||Object.keys(regs)[0];}
+ const nameOf=id=>{const row=(P.rows||[]).find(x=>String(x.id)===String(id));return row?row.name:id;};
+ const regbar=Object.keys(regs).map(r=>`<button class="rpill ${r===cur?'on':''}" onclick="pickReg('${r}')">${r}</button>`).join('');
+ const stores=(regs[cur]||[]).map(id=>`<button class="spill ${String(id)===String(SEL)?'on':''}" onclick="openStore('${id}')">${nameOf(id)} #${id}</button>`).join('');
+ return `<div class="picker"><div class="pickrow">${regbar}</div><div class="pickrow">${stores}</div></div>`;
+}
+function pickReg(r){PICKREG=r;const p=document.getElementById('picker');if(p)p.innerHTML=storePicker();}
+function msgPanel(d){const m=d.messages||[];
+ return `<div class="msgbox"><div class="msgh">Messages</div>${m.length?m.map(x=>`<div class="msg"><div class="msgb">${x.body}</div><div class="msgm">${x.from||''} · ${x.when||''}</div></div>`).join(''):'<div class="msgempty">No messages yet.</div>'}</div>`;
 }
 function band(){return '<div class="band"><div>Morning</div><div>Afternoon</div><div>Evening</div></div>';}
 function cumSection(title,m,color,key,d){
@@ -254,17 +333,26 @@ function aroSection(d){const a=d.aro,dr=d.drivers||[];
   <div class="mrow"><div class="boxes">
    <div class="box" title="ARO so far $${Math.round(a.sofar||0)} = net ÷ cars · target $${Math.round(a.target||125)} (${pc(a.gap)} gap)"><div class="bl">Today</div><div class="triple"><div><div class="big">$${Math.round(a.sofar||0)}</div><div class="cap">so far</div></div><div><div class="mid ${a.gap>=0?'pos':'neg'}">${pc(a.gap)}</div><div class="cap">gap</div></div><div><div class="big">$${Math.round(a.target||125)}</div><div class="cap">target</div></div></div></div>
    ${dr.slice(0,2).map((x,i)=>`<div class="driver clickable" onclick="tog('arod${i}')"><div class="dt">${x.title}<span class="tag ${x.status}">driver</span> <span class="chev">▾</span></div><div class="dm">${x.message}</div><div class="expand" id="arod${i}"><div class="chartbox sm"><canvas id="c_arod${i}"></canvas></div></div></div>`).join('')||'<div class="box"><div class="bsub">No standout driver — ARO tracking normal.</div></div>'}
-  </div><div><div class="chartbox" style="height:300px"><canvas id="c_aro"></canvas></div></div></div></div>`;
+  </div><div>${band()}<div class="chartbox" style="height:266px"><canvas id="c_aro"></canvas></div></div></div></div>`;
 }
 function big4Section(d){const b=d.big4;
  return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.teal}"></div><span class="t">Big 4 attachment</span><span class="n">attach % of cars vs the 53% goal</span></div>
   <div class="mrow"><div class="boxes"><div class="box" title="Big 4 attach ${Math.round(b.pct||0)}% = ${b.units} Big 4 units ÷ cars, as a % of cars · goal ${b.target}% (sum of the four item targets). Click units for per-item."><div class="bl">Attach</div><div class="triple"><div><div class="big">${Math.round(b.pct||0)}%</div><div class="cap">of cars</div></div><div><div class="mid">${b.target}%</div><div class="cap">goal</div></div><div><div class="big clickable" onclick="tog('b4u')">${b.units}<span class="chev"> ▾</span></div><div class="cap">units</div></div></div><div class="expand" id="b4u"><div class="sub">Units per item</div><div class="chartbox sm"><canvas id="c_b4units"></canvas></div></div></div></div>
-   <div><div class="chartbox" style="height:200px"><canvas id="c_big4"></canvas></div></div></div></div>`;
+   <div><div class="big4grid"><div>${band()}<div class="chartbox" style="height:200px"><canvas id="c_big4"></canvas></div></div>
+    <div><div class="bulletlabel">Attach % by item vs target</div><div id="bul">${buildBullets(b.items)}</div></div></div></div></div></div>`;
 }
+function buildBullets(items){items=items||[];const vals=items.flatMap(it=>[it.attach||0,it.target||0]);
+ const MX=Math.max(30,...vals)*1.15;const pos=v=>Math.min(100,v/MX*100);const IC=[C.teal,C.blue,C.purple,C.amber];
+ return items.map((it,i)=>{const r=it.target?it.attach/it.target:0,sc=r>=1?C.green:(r>=.6?C.amber:C.red);
+  return `<div class="bullet" title="${it.name}: ${Math.round(it.attach)}% attach vs ${it.target}% target · ${it.units||0} units"><span class="bn">${it.name}</span><div class="track"><span class="fill" style="width:${pos(it.attach)}%;background:${IC[i%4]}"></span><span class="tmark" style="left:${pos(it.target)}%"></span></div><span class="bv" style="color:${sc}">${Math.round(it.attach)}% / ${it.target}%</span></div>`;}).join('');}
 function lhpcSection(d){const l=d.lhpc;
  return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.purple}"></div><span class="t">Labor · LHPC</span><span class="n">rolling labor per car vs target</span></div>
   <div class="mrow"><div class="boxes"><div class="box clickable" onclick="tog('lhx')" title="Rolling ${(+l.day).toFixed(2)} = cumulative labor hours ÷ cumulative cars for the day · variance ${l.variance>0?'+':''}${(+l.variance).toFixed(2)} vs the ${(+l.target).toFixed(2)} target. Lower is leaner."><div class="bl">Rolling <span class="chev">▾</span></div><div class="triple"><div><div class="big">${(+l.day).toFixed(2)}</div><div class="cap">rolling</div></div><div><div class="mid ${l.variance<=0?'pos':'neg'}">${l.variance>0?'+':''}${(+l.variance).toFixed(2)}</div><div class="cap">variance</div></div><div><div class="big">${(+l.target).toFixed(2)}</div><div class="cap">target</div></div></div><div class="expand" id="lhx"><div class="sub">Rolling = cumulative labor hours ÷ cumulative cars for the day. Lower is leaner.</div></div></div></div>
-   <div><div class="chartbox" style="height:196px"><canvas id="c_lhpc"></canvas></div></div></div></div>`;
+   <div>${band()}<div class="chartbox" style="height:196px"><canvas id="c_lhpc"></canvas></div></div></div></div>`;
+}
+function opsSection(d){const ops=d.ops||[];if(!ops.length)return '';
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.mute}"></div><span class="t">Operational detail</span><span class="n">the numbers behind the day</span></div>
+  <div class="ops">${ops.map(o=>`<div class="o"><div class="ol">${o[0]}</div><div class="ov">${o[1]}</div><div class="os">${o[2]||''}</div></div>`).join('')}</div></div>`;
 }
 // Clicking a KPI box only draws its own pop-out mini-chart — never re-renders the main charts.
 function tog(id){const e=document.getElementById(id);if(!e)return;const open=!e.classList.contains('open');e.classList.toggle('open');
@@ -324,12 +412,13 @@ function drawB4units(d){const b=d.big4;if(!document.getElementById('c_b4units'))
 }
 
 /* ---------- historical ---------- */
-const HKEY={Cars:'cars',Net:'net',ARO:'aro','Big 4':'big4',LHPC:'lhpc'};
+const HKEY={Cars:'cars',Net:'net',ARO:'aro','Big 4':'big4',LHPC:'lhpc',Task:'task'};
 let HMETRIC='cars',HSTORES=null;
 function hist(){const h=P.hist||{stores:[],days:[]};const el=document.getElementById('v_hist');
  if(HSTORES===null)HSTORES=(h.stores||[]).slice(0,Math.min(3,(h.stores||[]).length)).map(s=>s.id);
  el.innerHTML=`<div class="scopeName">Historical performance <span class="sub">last 7 days + today · hover a day for its gap vs today</span></div>
-  <div class="row"><div class="seg" id="hmetric">${Object.keys(HKEY).map(m=>`<button class="${HKEY[m]===HMETRIC?'on':''}" onclick="hm(this,'${HKEY[m]}')">${m}</button>`).join('')}</div></div>
+  <div class="row"><div class="seg" id="hmetric">${Object.keys(HKEY).map(m=>`<button class="${HKEY[m]===HMETRIC?'on':''}" onclick="hm(this,'${HKEY[m]}')">${m}</button>`).join('')}</div>
+   <button class="chipbtn" onclick="hAll()">All</button><button class="chipbtn" onclick="hClear()">Clear all</button></div>
   <div class="pills" id="hchips">${(h.stores||[]).map(s=>`<button class="${HSTORES.includes(s.id)?'on':''}" onclick="hchip('${s.id}')">${s.name}</button>`).join('')}</div>
   <div class="panel"><div class="chartbox" style="height:320px"><canvas id="c_hist"></canvas></div></div>
   <h2 class="sh">Selected stores <span class="sub">last-week average vs today</span></h2>
@@ -338,13 +427,19 @@ function hist(){const h=P.hist||{stores:[],days:[]};const el=document.getElement
 }
 function hm(b,m){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');HMETRIC=m;drawHist();}
 function hchip(id){const i=HSTORES.indexOf(id);if(i>=0)HSTORES.splice(i,1);else HSTORES.push(id);hist();}
+function hAll(){HSTORES=((P.hist||{}).stores||[]).map(s=>s.id);hist();}
+function hClear(){HSTORES=[];hist();}
 function drawHist(){const h=P.hist||{stores:[],days:[]};const sel=(h.stores||[]).filter(s=>HSTORES.includes(s.id));
  if(!document.getElementById('c_hist'))return;
  if(!sel.length){if(ch['c_hist'])ch['c_hist'].destroy();document.getElementById('htab').innerHTML='<div class="empty">Select at least one store.</div>';return;}
  const days=(h.days||[]).concat([h.today||'Today']);
  const box={id:'box',afterDraw:c=>{const{ctx,chartArea:{top,bottom},scales:{x}}=c;const p=x.getPixelForValue(days[days.length-1]);ctx.save();ctx.fillStyle='rgba(46,111,183,.10)';ctx.strokeStyle='rgba(46,111,183,.55)';ctx.lineWidth=1.5;ctx.fillRect(p-24,top,48,bottom-top);ctx.strokeRect(p-24,top,48,bottom-top);ctx.restore();}};
- mk('c_hist',{type:'line',data:{labels:days,datasets:sel.map(s=>({label:s.name,data:s.metrics[HMETRIC],borderColor:s.color,borderWidth:2.4,tension:.35,spanGaps:true,pointRadius:days.map((d,i)=>i===days.length-1?5:3),pointBackgroundColor:s.color}))},
-  options:{...G,plugins:{legend:{display:true,position:'top',align:'end'},tooltip:{callbacks:{label:c=>{const arr=c.dataset.data;const t=arr[arr.length-1];const df=t?(((c.parsed.y-t)/t)*100).toFixed(0):0;return c.dataset.label+': '+(c.parsed.y==null?'—':Math.round(c.parsed.y))+' ('+(df>=0?'+':'')+df+'% vs today)';}}}},scales:{x:{grid:{display:false}},y:{grid:{color:C.line}}}},plugins:[box]});
+ const isTask=HMETRIC==='task';
+ mk('c_hist',{type:'line',data:{labels:days,datasets:sel.map(s=>({label:s.name,data:s.metrics[HMETRIC],borderColor:s.color,borderWidth:2.4,tension:.35,spanGaps:true,pointRadius:days.map((d,i)=>i===days.length-1?5:3),pointBackgroundColor:s.color,_items:isTask?(s.taskItems||[]):null}))},
+  options:{...G,plugins:{legend:{display:true,position:'top',align:'end'},tooltip:{callbacks:{
+    label:c=>{if(isTask)return c.dataset.label+': '+Math.round(c.parsed.y)+'% done';const arr=c.dataset.data;const t=arr[arr.length-1];const df=t?(((c.parsed.y-t)/t)*100).toFixed(0):0;return c.dataset.label+': '+(c.parsed.y==null?'—':Math.round(c.parsed.y))+' ('+(df>=0?'+':'')+df+'% vs today)';},
+    afterLabel:c=>{if(!isTask)return '';const it=(c.dataset._items||[])[c.dataIndex]||[];return it.length?('Done: '+it.join(', ')):'None done';}}}},
+   scales:{x:{grid:{display:false}},y:{grid:{color:C.line},suggestedMax:isTask?100:undefined,beginAtZero:isTask}}},plugins:[box]});
  document.getElementById('htab').innerHTML='<table><thead><tr><th>Store</th><th>Last-week avg</th><th>Today</th><th>Δ vs last wk</th></tr></thead><tbody>'+sel.map(s=>{const arr=s.metrics[HMETRIC];const t=arr[arr.length-1];const prev=arr.slice(0,-1).filter(v=>v!=null);const avg=prev.length?prev.reduce((a,b)=>a+b,0)/prev.length:0;const df=avg?(((t-avg)/avg)*100).toFixed(0):0;return `<tr><td>${s.name}</td><td>${Math.round(avg)}</td><td>${t==null?'—':Math.round(t)}</td><td class="${df>=0?'pos':'neg'}">${df>=0?'+':''}${df}%</td></tr>`;}).join('')+'</tbody></table>';
 }
 function fit(){try{if(window.frameElement){window.frameElement.style.height=Math.max(680,document.documentElement.scrollHeight+8)+'px';}}catch(e){}}

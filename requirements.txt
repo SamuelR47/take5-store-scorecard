@@ -3,3 +3,4 @@ beautifulsoup4>=4.12
 streamlit>=1.36
 plotly>=5.22
 fpdf2>=2.7
+pymupdf>=1.24
