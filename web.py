@@ -71,8 +71,8 @@ _TMPL = r"""
 .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
 h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);font-weight:500;font-size:.8rem;margin-left:8px}
-.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px;align-items:stretch}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;box-shadow:0 1px 2px rgba(15,23,42,.04);display:flex;flex-direction:column;justify-content:center;height:100%}
 .kpi .l{font-size:.6rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);font-weight:800}
 .kpi .v{font-size:1.3rem;font-weight:800;letter-spacing:-.5px;margin-top:1px}
 .kpi .vsub{font-size:.78rem;color:var(--mute);font-weight:700;letter-spacing:0}
@@ -156,8 +156,8 @@ table.heat th{background:var(--soft);color:var(--mute);font-weight:700;font-size
 .navhead .rt small{color:#9FB4CC}
 .navhead .live{color:#37D08A;font-weight:800}
 .subline{color:var(--mute);font-size:.76rem;font-weight:600;margin:0 0 12px 2px}
-.row2{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;margin-bottom:12px}
-.card2{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px}
+.row2{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;margin-top:18px;margin-bottom:12px;align-items:stretch}
+.card2{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px;height:100%}
 .card2 .sh2{font-weight:800;font-size:1rem;margin-bottom:10px}.card2 .sh2 .sub{font-weight:600}
 .expl2{display:grid;gap:9px}
 .pbox .h2{font-weight:800;color:var(--navy);font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
@@ -203,14 +203,27 @@ function pc(v){return v==null?'—':((v>=0?'+':'')+(+v).toFixed(1)+'%');}
 function scls(s){return s==='g'?'pos':(s==='r'?'neg':(s==='a'?'amb':''));}
 function kcls(s){return s==='g'?'sg':(s==='r'?'sr':(s==='a'?'sa':''));}
 function mk(id,cfg){const el=document.getElementById(id);if(!el)return;if(ch[id])ch[id].destroy();ch[id]=new Chart(el,cfg);}
+// D4: freshness/close state for the header. closed -> neutral "closed · final";
+// stale (>90m) -> amber warning; otherwise the usual green "live". Light-bg (topbar).
+function freshLabel(){
+ if(P.closed)return '<span style="color:'+C.mute+';font-weight:800">closed · final</span>';
+ if(P.stale)return '<span style="color:'+C.amber+';font-weight:800">Data may be stale — last update '+(P.staleMin!=null?P.staleMin:'?')+'m ago</span>';
+ return '<span class="dot"></span>live · '+(P.asof||'');
+}
+// Same logic on the navy detail header (needs light text on dark bg).
+function freshHead(){
+ if(P.closed)return '<span style="color:#9FB4CC;font-weight:800">closed · final</span>';
+ if(P.stale)return '<span style="color:'+C.amber+';font-weight:800">stale · last update '+(P.staleMin!=null?P.staleMin:'?')+'m ago</span>';
+ return '<span class="live">● live</span> · '+(P.asof||'');
+}
 const G={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},elements:{point:{radius:0}}};
 
 function shell(){
  document.getElementById('root').innerHTML=`
  <div class="app">
   <main class="main">
-   <div class="topbar"><div class="scopeName" id="scopeName">${STORE?'':(P.scopeName||'')}</div>
-    <div class="meta" id="freshMeta"><span><span class="dot"></span>live · ${P.asof||''}</span><span>${P.sourced||''}</span></div></div>
+   ${STORE?'':`<div class="topbar"><div class="scopeName" id="scopeName">${P.scopeName||''}</div>
+    <div class="meta" id="freshMeta"><span>${freshLabel()}</span><span>${P.sourced||''}</span></div></div>`}
    <section class="view on" id="v_overview"></section>
    <section class="view" id="v_detail"></section>
    <section class="view" id="v_hist"></section>
@@ -291,7 +304,7 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
  const k=d.kpi;
  const crumb=STORE?'':`<div class="crumb"><a onclick="nav('overview')">Overview</a> › <b>${d.name} · #${d.id}</b></div>`;
  const navhead=`<div class="navhead"><div><span class="brand2">VantEdge Auto</span><span class="sub2">Take 5 · Time Report</span></div>
-  <div class="rt"><b>${d.name} · #${d.id}</b><br>${P.date||''} · <span class="live">● live</span> · ${P.asof||''}${P.sourced?`<br><small>${P.sourced}</small>`:''}</div></div>`;
+  <div class="rt"><b>${d.name} · #${d.id}</b><br>${P.date||''} · ${freshHead()}${P.sourced?`<br><small>${P.sourced}</small>`:''}</div></div>`;
  el.innerHTML=`${crumb}${STORE?'':`<div id="picker">${storePicker()}</div>`}
   ${navhead}
   <div class="subline">${d.region||''} · opened ${d.open||'—'}</div>

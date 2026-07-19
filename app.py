@@ -381,19 +381,28 @@ def build_web_payload(tier, allowed, scope_label, stamp):
     kpis = {"stores": len(rows), "cars": tc, "carsPace": round(sum(paced) / len(paced), 1) if paced else None,
             "net": tn, "aro": round(tn / tc, 1) if tc else None, "big4": round(b4, 1) if b4 is not None else None}
     sourced = ""
+    stale = False
+    stale_min = None
     if newest:
         srcd = dt.datetime.fromtimestamp(newest.timestamp(), CENTRAL)
         mins = int((now - srcd).total_seconds() // 60)
         sourced = f"sourced {srcd.strftime('%-I:%M %p')} · {'just now' if mins <= 0 else str(mins) + 'm ago'}"
+        # D4: freshness — data older than 90 min is flagged stale in the header.
+        stale_min = max(0, mins)
+        stale = stale_min > 90
     regions = (REGIONS if tier == "admin"
                else {k: v for k, v in REGIONS.items() if any(x in allowed for x in v)})
     o, c = HOURS[now.weekday()]
+    # D4: closed = current Central time is past the store's close hour. HOURS is keyed by
+    # weekday as (open, close); close hour is the same across all stores in a scope.
+    closed = now.hour >= c
     heat_hours = (["Before " + calc.hour_label(o)] + [calc.hour_label(h) for h in range(o, c + 1)]
                   + ["After " + calc.hour_label(c)])
     return {"tier": tier, "mode": "store" if tier == "store" else "full",
             "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
             "date": now.strftime("%A, %b %-d %Y"),
-            "sourced": sourced, "kpis": kpis, "regions": regions, "rows": rows, "detail": detail,
+            "sourced": sourced, "stale": stale, "staleMin": stale_min, "closed": closed,
+            "kpis": kpis, "regions": regions, "rows": rows, "detail": detail,
             "heatHours": heat_hours,
             "hist": {"days": labels, "today": "Today", "stores": hstores, "metric": "cars"}}
 
@@ -496,6 +505,7 @@ def _task_toggle(store, today, task, key, label):
             datastore.complete_task(store, today, task, label)
         else:
             datastore.uncomplete_task(store, today, task)
+        build_web_payload.clear()  # D3/D6: bust the display cache so the next render is fresh
     except Exception as e:
         st.session_state["_task_err"] = f"{type(e).__name__}: {e}"
 
@@ -586,6 +596,7 @@ def _messages_admin(user):
         if body.strip():
             try:
                 datastore.send_message(identity.attribution(user, name), "store", body.strip(), to_store=store)
+                build_web_payload.clear()  # D3/D6: bust the display cache so store inboxes refresh
                 st.success(f"Sent to {labels[store]}.")
             except Exception as e:
                 st.error(f"Couldn't send: {type(e).__name__}: {e}")
@@ -609,7 +620,7 @@ def _messages_admin(user):
                       f"{m.get('from_user','')}</span>", unsafe_allow_html=True)
         if mid is not None and c[3].button("Delete", key=f"del_{mid}"):
             try:
-                datastore.delete_message(mid); st.rerun()
+                datastore.delete_message(mid); build_web_payload.clear(); st.rerun()
             except Exception as e:
                 st.error(f"Couldn't delete: {type(e).__name__}: {e}")
 
@@ -680,6 +691,8 @@ def _targets_editor(user):
                     else:
                         datastore.set_target(s, key, v, who)
                     changes += 1
+            if changes:
+                build_web_payload.clear()  # D3/D6: bust the display cache so new targets show
             st.success(f"Saved {changes} change(s)." if changes else "No changes to save.")
         except Exception as e:
             st.error(f"Couldn't save targets: {type(e).__name__}: {e}")
@@ -714,13 +727,21 @@ def main():
     elif role in ("admin", "district"):
         st.markdown("""<style>
          .block-container{padding:.4rem .8rem 0!important;max-width:100%!important}
-         /* Nav is PERMANENT: force the sidebar open (override Streamlit's collapse transform)
-            so it can never disappear with no way back — the actual bug Samuel hit twice. */
-         [data-testid="stSidebar"],section[data-testid="stSidebar"]{background:#14273F!important;
-           width:212px!important;min-width:212px!important;transform:none!important;
-           visibility:visible!important;margin-left:0!important}
+         /* Base sidebar styling (all widths). */
+         [data-testid="stSidebar"],section[data-testid="stSidebar"]{background:#14273F!important}
          [data-testid="stSidebar"] *{color:#fff}
-         [data-testid="stSidebarCollapseButton"]{display:none!important}
+         /* D1: force the sidebar open ONLY on desktop (>=821px) so it can never disappear
+            with no way back (the bug Samuel hit twice). On mobile (<=820px) we do NOT force
+            it open — it stays a closable drawer/overlay so it can't underlap page content. */
+         @media (min-width:821px){
+           [data-testid="stSidebar"],section[data-testid="stSidebar"]{
+             width:212px!important;min-width:212px!important;transform:none!important;
+             visibility:visible!important;margin-left:0!important}
+         }
+         /* D1: the collapse/expand (reopen) control must ALWAYS be reachable at any width so
+            the sidebar can be reopened after closing — never display:none it. */
+         [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
+         [data-testid="collapsedControl"]{display:flex!important;visibility:visible!important}
          .navbrand{font-weight:800;font-size:1.06rem;padding:8px 6px 16px;line-height:1.2}
          .navbrand span{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:3px}
          [data-testid="stSidebar"] [role="radiogroup"]{gap:2px}
@@ -809,10 +830,14 @@ def main():
         with right:
             _store_messages(user)
     else:
+        # D5: on phone the store view renders the dashboard/KPIs FIRST, then tasks, then
+        # messages (previously tasks+messages sat above the dashboard, burying the KPIs).
         if role == "store":
+            _dashboard_view(tier, allowed, scope, mobile, startview)
             _task_checklist(user)
             _store_messages(user)
-        _dashboard_view(tier, allowed, scope, mobile, startview)
+        else:
+            _dashboard_view(tier, allowed, scope, mobile, startview)
 
 
 if __name__ == "__main__":
