@@ -3,8 +3,8 @@ per-tier payload -> one embedded HTML/Chart.js dashboard. Three tiers:
 store (own store), DM/AM (their region's stores), admin (all 15).
 
 V3 shell:
-- Professional centered login; phone/desktop toggle (?view=phone) with compact mobile
-  controls; data-source health banner (H5).
+- Professional centered login; a single desktop layout for all devices (the separate
+  mobile view was removed); data-source health banner (H5).
 - Score cards are embedded in the dashboard itself (Today from live data + Yesterday and
   Last-7-days from an hourly cache) and rendered as a section inside the store view.
 - User guide opens in a modal as page IMAGES (reliable on every device, unlike a PDF
@@ -66,22 +66,12 @@ def _parse_ts(s):
 
 
 def is_mobile():
-    # F7 root cause: this used to key ONLY off ?view=phone, so a real phone hitting the bare
-    # URL fell through to the desktop 3-column store layout, where the native task/message
-    # columns collapse and overlap the dashboard component. Now: explicit ?view= wins (so the
-    # Desktop/Phone toggle still works), otherwise sniff the User-Agent server-side so a narrow
-    # real phone gets the stacked layout with no param. Degrades to desktop if headers absent.
-    try:
-        v = st.query_params.get("view")
-        if v == "phone": return True
-        if v == "desktop": return False
-    except Exception:
-        pass
-    try:
-        ua = (st.context.headers.get("User-Agent") or "").lower()
-        return any(k in ua for k in ("iphone", "android", "ipad", "ipod", "mobile"))
-    except Exception:
-        return False
+    # The separate mobile/stacked layout was removed: it was the source of a persistent overlap
+    # bug (native tasks/messages painting over the dashboard component). The desktop layout
+    # renders fine on phones (Streamlit auto-stacks columns on narrow screens), so there is now
+    # exactly ONE layout for everyone. This is kept as a stub (always False) so callers that
+    # still pass a `mobile` flag don't break, and any legacy ?view= param is inert.
+    return False
 
 
 def _picker(options, current, key, mobile):
@@ -437,8 +427,8 @@ def _dashboard_view(tier, allowed, scope, mobile, startview="overview"):
     # the @st.cache_data entry (same pattern already used for startView).
     payload = dict(build_web_payload(tier, allowed, scope, stamp))
     payload["startView"] = startview
-    payload["mobile"] = mobile  # F8: web.py hides the row2 movers/how-to-read block on phone
-    components.html(web.html(payload), height=(1600 if mobile else 900), scrolling=True)
+    payload["mobile"] = False  # single desktop layout for all; movers/how-to-read always shown
+    components.html(web.html(payload), height=900, scrolling=True)
 
 
 # ---------------- V4 (D): historical performance (DM + admin, read-only) ----------------
@@ -725,13 +715,10 @@ def main():
     user = identity.resolve(role, code)
     st.session_state["user"] = user
 
-    mobile = is_mobile()
-    if mobile:
-        st.markdown("<style>.stButton>button{padding:.4rem .35rem;font-size:.82rem;min-height:0}"
-                    "div[data-testid='stHorizontalBlock']{gap:.4rem}</style>", unsafe_allow_html=True)
+    mobile = is_mobile()  # always False now; retained only so `mobile`-flagged calls don't break
     # V4: admin/DM run the full-width website component with ONE navy left nav (the native
     # sidebar, styled). Trim page gutters; style the sidebar to match the product. Store: as-is.
-    elif role == "store":
+    if role == "store":
         st.markdown("<style>"
                     ".block-container{padding-top:.6rem!important}"
                     # F3: top-align the 3 store columns so the tan task/message boxes and the
@@ -790,21 +777,12 @@ def main():
         st.warning("⚠️ Couldn't reach the data source just now — numbers below may be stale or empty. "
                    "Try Refresh in a minute. (This is different from a store simply not having opened yet.)")
 
-    # top controls: Refresh · Phone/Desktop · Guide · Log out. All re-run IN the session.
-    if mobile:
-        cref, cview, cg, clo = st.columns(4)
-    else:
-        _, cref, cview, cg, clo = st.columns([6, 1.3, 1.4, 1.3, 1.1])
+    # top controls: Refresh · Guide · Log out. All re-run IN the session. (The Phone/Desktop
+    # toggle was removed — there is now a single desktop layout for all devices.)
+    _, cref, cg, clo = st.columns([6, 1.4, 1.3, 1.1])
     with cref:
         if st.button("↻ Refresh", use_container_width=True):
             st.cache_data.clear(); st.rerun()
-    with cview:
-        if mobile:
-            if st.button("Desktop View", use_container_width=True):
-                st.query_params["view"] = "desktop"; st.rerun()
-        else:
-            if st.button("Phone View", use_container_width=True):
-                st.query_params["view"] = "phone"; st.rerun()
     with cg:
         if st.button("User Guide", use_container_width=True):
             _open_guide()
@@ -852,7 +830,7 @@ def main():
 
     # V4 (C): store login gets the daily-task checklist in the LEFT column (native, so it can
     # save), with the dashboard component on the right. Other tiers render full-width.
-    if role == "store" and not mobile:
+    if role == "store":
         left, mid, right = st.columns([1.05, 5.9, 1.15], gap="small")
         with left:
             _task_checklist(user)
@@ -861,15 +839,7 @@ def main():
         with right:
             _store_messages(user)
     else:
-        # D5/F10: on phone the store view renders the dashboard/KPIs FIRST, then messages,
-        # then the daily task checklist LAST (at the very bottom). Plain sequential vertical
-        # st calls — no columns on mobile — so nothing can overlay the dashboard component.
-        if role == "store":
-            _dashboard_view(tier, allowed, scope, mobile, startview)
-            _store_messages(user)
-            _task_checklist(user)
-        else:
-            _dashboard_view(tier, allowed, scope, mobile, startview)
+        _dashboard_view(tier, allowed, scope, mobile, startview)
 
 
 if __name__ == "__main__":
