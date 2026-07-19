@@ -274,6 +274,17 @@ def build_store(store, city, region, today_rows, hist, now, targets=None):
     # Non-linear target line: normal-day cumulative shape scaled to the full-day target.
     cars["target_curve"]=target_series(hist,weekday,"cars",hours,cars["tgt"],td)
     net["target_curve"] =target_series(hist,weekday,"net_sales",hours,net["tgt"],td)
+    # F1: fleet vs common(retail) split of net. Fleet lives in the latest pull's `data`
+    # blob (fleets_amount is receipts-basis; fleets_count = ticket count). Split shown as
+    # %-of-net per Samuel. Basis caveat: fleets_amount is receipts-basis while net_sales
+    # excludes tax, so the two aren't a perfectly like-for-like base — % is directional.
+    _fdata=latest.get("data") or {}
+    _fleet_amt=float(_fdata.get("fleets_amount") or 0)
+    _fleet_cnt=int(_fdata.get("fleets_count") or 0)
+    _net_now=net["sofar"] or 0
+    _fleet_pct=round(100*_fleet_amt/_net_now,1) if _net_now else 0.0
+    net["fleet"]={"amt":round(_fleet_amt),"pct":_fleet_pct,"cnt":_fleet_cnt}
+    net["nonfleet"]={"amt":round(_net_now-_fleet_amt),"pct":round(100-_fleet_pct,1)}
     aro["target"]=tg["aro"]["value"]; aro["tgtSrc"]=tg["aro"]["source"]
     if aro["sofar"]: aro["gap_pct"]=round((aro["sofar"]/tg["aro"]["value"]-1)*100,1)
     bb=latest.get("big4") or {}

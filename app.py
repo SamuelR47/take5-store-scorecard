@@ -66,8 +66,22 @@ def _parse_ts(s):
 
 
 def is_mobile():
-    try: return st.query_params.get("view") == "phone"
-    except Exception: return False
+    # F7 root cause: this used to key ONLY off ?view=phone, so a real phone hitting the bare
+    # URL fell through to the desktop 3-column store layout, where the native task/message
+    # columns collapse and overlap the dashboard component. Now: explicit ?view= wins (so the
+    # Desktop/Phone toggle still works), otherwise sniff the User-Agent server-side so a narrow
+    # real phone gets the stacked layout with no param. Degrades to desktop if headers absent.
+    try:
+        v = st.query_params.get("view")
+        if v == "phone": return True
+        if v == "desktop": return False
+    except Exception:
+        pass
+    try:
+        ua = (st.context.headers.get("User-Agent") or "").lower()
+        return any(k in ua for k in ("iphone", "android", "ipad", "ipod", "mobile"))
+    except Exception:
+        return False
 
 
 def _picker(options, current, key, mobile):
@@ -285,7 +299,9 @@ def _web_detail(sp):
                 "target": d.get("target_curve") or _target_curve(d.get("tgt"), n),
                 "sofar": d["sofar"], "est_close": d["est_close"], "norm": d.get("norm"),
                 "pace": d.get("pace_pct"), "status": calc.st_pace(d.get("pace_pct")),
-                "tgt": d.get("tgt"), "tgtSrc": d.get("tgtSrc"), "wk": d.get("wk", [])}
+                "tgt": d.get("tgt"), "tgtSrc": d.get("tgtSrc"), "wk": d.get("wk", []),
+                # F1: fleet/common split (present on net only; None for cars)
+                "fleet": d.get("fleet"), "nonfleet": d.get("nonfleet")}
     return {"name": sp["name"], "id": sp["id"], "region": sp.get("region", ""), "open": sp.get("open", ""),
             "now": sp["now"], "hours": sp["hours"],
             "kpi": {"cars": round(sp["cars"]["sofar"]), "carsNorm": sp["cars"].get("norm"),
@@ -417,8 +433,11 @@ def _dashboard_view(tier, allowed, scope, mobile, startview="overview"):
     stamp = now.strftime("%Y-%m-%d-%H-%M")
     # V4 (B-3d): every tier renders the website component. The native sidebar chooses which
     # section it opens on (startView). Store logins get a store-locked view (their store only).
+    # dict() shallow-copies the cached payload so these per-view keys never mutate/poison
+    # the @st.cache_data entry (same pattern already used for startView).
     payload = dict(build_web_payload(tier, allowed, scope, stamp))
     payload["startView"] = startview
+    payload["mobile"] = mobile  # F8: web.py hides the row2 movers/how-to-read block on phone
     components.html(web.html(payload), height=(1600 if mobile else 900), scrolling=True)
 
 
@@ -715,6 +734,12 @@ def main():
     elif role == "store":
         st.markdown("<style>"
                     ".block-container{padding-top:.6rem!important}"
+                    # F3: top-align the 3 store columns so the tan task/message boxes and the
+                    # dashboard component (middle) all start on the same top line; zero the
+                    # stray top margins Streamlit adds to the first block in each column/iframe.
+                    "div[data-testid='stHorizontalBlock']{align-items:flex-start}"
+                    "[data-testid='column']>div,[data-testid='stColumn']>div{margin-top:0!important}"
+                    "[data-testid='column'] iframe,[data-testid='stColumn'] iframe{margin-top:0!important;display:block}"
                     # tan boxes for the tasks (left) and messages (right) columns
                     "[data-testid='column']:has(#taskbox-marker),[data-testid='stColumn']:has(#taskbox-marker),"
                     "[data-testid='column']:has(#msgbox-marker),[data-testid='stColumn']:has(#msgbox-marker)"

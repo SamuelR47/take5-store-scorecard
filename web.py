@@ -45,8 +45,14 @@ _TMPL = r"""
  --teal:#0E7490;--purple:#6C4FB6;--ink:#0F172A;--mute:#5B6472;--line:#E2E7EE;
  --bg:#F4F6F9;--card:#fff;--soft:#F7F9FC;--gbg:#E7F3EC;--rbg:#FBEAE9;--abg:#FBF1DF;}
 *{box-sizing:border-box}
+/* F3: kill the component iframe's default body margin so the navy header top edge starts
+   flush with the iframe top (and thus lines up with the native task/message side boxes). */
+html,body{margin:0;padding:0}
 #root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);font-size:14px}
 .app{display:flex;min-height:640px;background:#fff}
+/* F3: store-login view has no topbar — drop the main's top padding so the navhead is the
+   topmost element and its top edge aligns with the side columns' tan boxes. */
+.app.store .main{padding-top:0}
 .side{width:206px;flex:0 0 206px;background:var(--navy);color:#fff;padding:16px 12px;display:flex;flex-direction:column}
 .brand{font-weight:800;font-size:1.05rem;padding:6px 8px}
 .brand small{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:2px}
@@ -110,6 +116,8 @@ h2.sh{font-size:1rem;font-weight:800;margin:20px 0 10px}.sub{color:var(--mute);f
 .chev{font-size:.64rem;color:var(--blue);font-weight:800}
 .expand{display:none;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px}.expand.open{display:block}
 .tgt{border-color:#F0C9B8;background:#FBF1EC}.tgt .bl{color:#993C1D}.tgt .val{color:#993C1D;font-size:1.1rem;font-weight:800}
+/* F2: projected-vs-target combined box color (green at/above target, red below) */
+.box.pg{background:var(--gbg);border-color:#BFE0CC}.box.pr{background:var(--rbg);border-color:#F0C9C6}
 .badge{background:#F1D6C8;color:#8A3617;border-radius:4px;padding:1px 6px;font-size:.63rem;font-weight:800}
 .legend{display:flex;gap:16px;justify-content:center;margin-bottom:6px;font-size:.72rem;font-weight:700}
 .lg span{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:5px}
@@ -220,7 +228,7 @@ const G={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:fals
 
 function shell(){
  document.getElementById('root').innerHTML=`
- <div class="app">
+ <div class="app ${STORE?'store':''}">
   <main class="main">
    ${STORE?'':`<div class="topbar"><div class="scopeName" id="scopeName">${P.scopeName||''}</div>
     <div class="meta" id="freshMeta"><span>${freshLabel()}</span><span>${P.sourced||''}</span></div></div>`}
@@ -247,7 +255,7 @@ function overview(){const k=P.kpis||{};
    <div class="kpi ${k.carsPace>=0?'sg':'sr'}" title="Total cars so far across the scope · ${pc(k.carsPace)} vs the cars-weighted 4-week average"><div class="l">Total cars</div><div class="v">${k.cars!=null?Math.round(k.cars):'—'}</div><div class="d ${k.carsPace>=0?'pos':'neg'}">${pc(k.carsPace)} vs 4-wk</div></div>
    <div class="kpi" title="Total net sales so far across the scope"><div class="l">Total net</div><div class="v">${k.net!=null?fmt.net(k.net):'—'}</div><div class="d">so far</div></div>
    <div class="kpi ${k.aro>=125?'sg':'sr'}" title="Cars-weighted average ARO (total net ÷ total cars) vs the $125 target"><div class="l">Avg ARO</div><div class="v">${k.aro!=null?fmt.aro(k.aro):'—'}</div><div class="d ${k.aro>=125?'pos':'neg'}">vs $125</div></div>
-   <div class="kpi ${k.big4>=53?'sg':'sa'}" title="Cars-weighted Big 4 attach % across the scope vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4>=53?'pos':'amb'}">goal 53%</div></div>
+   <div class="kpi ${k.big4==null?'':(k.big4>=53?'sg':(k.big4>=32?'sa':'sr'))}" title="Cars-weighted Big 4 attach % across the scope vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4==null?'':(k.big4>=53?'pos':(k.big4>=32?'amb':'neg'))}">goal 53%</div></div>
   </div>
   <div class="row" style="margin-top:16px">
    <div class="seg"><button onclick="ovv(this,'rank')">Store ranking</button><button onclick="ovv(this,'graph')">Graphs</button><button class="on" onclick="ovv(this,'table')">Table</button></div>
@@ -317,7 +325,7 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
    <div class="kpi ${kcls(k.lhpcStatus)}" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
    ${(()=>{const tk=Math.round(k.task||0);const st=tk>=80?'sg':(tk>=50?'sa':'sr');const dc=tk>=80?'pos':(tk>=50?'amb':'neg');return `<div class="kpi ${st}" title="Today's daily-task completion for this store"><div class="l">Task</div><div class="v">${tk}%</div><div class="d ${dc}">done today</div></div>`;})()}
   </div>
-  ${moversSection(d)}
+  ${P.mobile?'':moversSection(d)}
   ${cumSection('Cars',d.cars,C.blue,'cars',d)}
   ${aroSection(d)}
   ${cumSection('Net revenue',d.net,C.green,'net',d)}
@@ -353,8 +361,18 @@ function cumSection(title,m,color,key,d){
  const isAdm=(P.tier==='admin'||P.tier==='district');
  const tgtSrc=isAdm&&m.tgtSrc?`<span class="badge">${m.tgtSrc}</span>`:'';
  const tToday=`${title} so far ${fv(m.sofar)} · 4-week average by this hour ${fv(m.norm)} · ${pc(m.pace)} vs that average (same weekday, holidays excluded, outliers capped). Click for the 4 days.`;
- const tProj=`Projected close ${fv(m.est_close)} = banked so far + a pace-scaled 4-week normal for the remaining hours (clamped 0.7–1.5×). Excludes the admin boost.`;
- const tTgt=m.tgt!=null?(isAdm?`Target ${fv(m.tgt)} = ${m.tgtSrc}`:`Store target ${fv(m.tgt)}`):'No target set';
+ // F2: Projected finish + Target merged into ONE color-sensitive box (Cars + Net only —
+ // cumSection is used only for those). Green when projected>=target, red when below.
+ const proj=m.est_close, tgt=m.tgt, gap=(tgt!=null)?(proj-tgt):null;
+ const combCls=(tgt!=null)?(proj>=tgt?'pg':'pr'):'';
+ const gapCls=(gap==null)?'':(gap>=0?'pos':'neg');
+ const gapTxt=(gap==null)?'—':((gap>=0?'+':'-')+fv(Math.abs(gap)));
+ const tComb=`Projected close ${fv(proj)} = banked so far + a pace-scaled 4-week normal for the remaining hours (clamped 0.7–1.5×). `+(tgt!=null?(`Target ${fv(tgt)}`+(isAdm&&m.tgtSrc?` (${m.tgtSrc})`:'')+`. Gap ${gapTxt}. Green when projected is at/above target, red when below.`):'No target set.');
+ // F1: fleet vs common(retail) split of net — net section only. %-of-net (fleet is
+ // receipts-basis, net excludes tax; directional, noted in calc).
+ const fleetBox=(key==='net'&&m.fleet)?`<div class="box" title="Common (retail) vs fleet share of net. Fleet is receipts-basis; net excludes tax, so the split is shown as % of net (directional)."><div class="bl">Common vs fleet</div>
+    <div class="triple" style="grid-template-columns:1fr 1fr"><div><div class="big">$${Math.round(m.nonfleet.amt).toLocaleString()}</div><div class="cap">Common · ${m.nonfleet.pct}%</div></div>
+     <div><div class="mid">$${Math.round(m.fleet.amt).toLocaleString()}</div><div class="cap">Fleet · ${m.fleet.pct}%${m.fleet.cnt?(' · '+m.fleet.cnt+' tkt'):''}</div></div></div></div>`:'';
  return `<div class="panel"><div class="mhead"><div class="acc" style="background:${color}"></div><span class="t">${title}</span><span class="n">cumulative today vs projected close</span></div>
   <div class="mrow"><div class="boxes">
    <div class="box clickable" onclick="tog('${key}wk')" title="${tToday}"><div class="bl">Today · as of ${d.now}</div>
@@ -362,8 +380,11 @@ function cumSection(title,m,color,key,d){
      <div><div class="mid ${scls(m.status)}">${pc(m.pace)}</div><div class="cap">vs 4-wk</div></div>
      <div><div class="big">${fv(m.norm)}</div><div class="cap">4-wk avg <span class="chev">▾</span></div></div></div>
     <div class="expand" id="${key}wk"><div class="sub">Last 4 same-weekdays by this hour + today</div><div class="chartbox sm"><canvas id="c_${key}wk"></canvas></div></div></div>
-   <div class="box" title="${tProj}"><div class="bl">Projected finish</div><div class="bsub">pace-scaled</div><div class="triple" style="grid-template-columns:1fr"><div class="big" style="color:${color}">${fv(m.est_close)}</div></div></div>
-   <div class="box tgt" title="${tTgt}"><div class="bl">Target</div><div class="bsub">${m.tgt!=null?tgtSrc:'—'}</div><div class="val">${m.tgt!=null?fv(m.tgt):'—'}</div></div>
+   <div class="box ${combCls}" title="${tComb}"><div class="bl">Projected vs target</div><div class="bsub">${tgt!=null&&tgtSrc?tgtSrc:'pace-scaled'}</div>
+    <div class="triple"><div><div class="big" style="color:${color}">${fv(proj)}</div><div class="cap">projected</div></div>
+     <div><div class="mid">${tgt!=null?fv(tgt):'—'}</div><div class="cap">target</div></div>
+     <div><div class="mid ${gapCls}">${gapTxt}</div><div class="cap">gap</div></div></div></div>
+   ${fleetBox}
   </div>
   <div><div class="legend"><span class="lg"><span style="background:${C.blue}"></span>Actual</span><span class="lg" style="color:${C.green}"><span style="border-top:2px dashed ${C.green};background:none;height:0"></span>Projected</span><span class="lg" style="color:${C.red}"><span style="border-top:2px dotted ${C.red};background:none;height:0"></span>Target</span></div>
    ${band()}<div class="chartbox"><canvas id="c_${key}"></canvas></div></div></div></div>`;
@@ -455,7 +476,12 @@ function drawDriver(d,i){const x=(d.drivers||[])[i];if(!x||!document.getElementB
 }
 
 function drawB4units(d){const b=d.big4;if(!document.getElementById('c_b4units'))return;
- mk('c_b4units',{type:'bar',data:{labels:(b.items||[]).map(x=>x.name),datasets:[{data:(b.items||[]).map(x=>x.units||0),backgroundColor:C.teal,borderRadius:3}]},options:{...G,scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false}}}});
+ const uv=(b.items||[]).map(x=>x.units||0);
+ // F5: per-bar numeric value labels via an inline plugin (no new CDN dependency).
+ const plug={id:'b4ulab',afterDatasetsDraw:c=>{const{ctx}=c;const meta=c.getDatasetMeta(0).data;ctx.save();
+   ctx.font='700 10px -apple-system,sans-serif';ctx.fillStyle='#0F172A';ctx.textAlign='center';
+   meta.forEach((bar,i)=>{if(uv[i]!=null)ctx.fillText(uv[i],bar.x,bar.y-4);});ctx.restore();}};
+ mk('c_b4units',{type:'bar',data:{labels:(b.items||[]).map(x=>x.name),datasets:[{data:uv,backgroundColor:C.teal,borderRadius:3}]},options:{...G,layout:{padding:{top:14}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false}}},plugins:[plug]});
 }
 
 /* ---------- historical ---------- */
