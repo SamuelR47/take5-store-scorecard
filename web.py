@@ -210,7 +210,7 @@ function shell(){
  <div class="app">
   <main class="main">
    <div class="topbar"><div class="scopeName" id="scopeName">${STORE?'':(P.scopeName||'')}</div>
-    <div class="meta"><span><span class="dot"></span>live · ${P.asof||''}</span><span>${P.sourced||''}</span></div></div>
+    <div class="meta" id="freshMeta"><span><span class="dot"></span>live · ${P.asof||''}</span><span>${P.sourced||''}</span></div></div>
    <section class="view on" id="v_overview"></section>
    <section class="view" id="v_detail"></section>
    <section class="view" id="v_hist"></section>
@@ -220,7 +220,10 @@ function shell(){
 function nav(v){document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='v_'+v));
  document.querySelectorAll('.side nav button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-v')===v));
  render(v);}
-function render(v){if(v==='overview')overview();else if(v==='detail')detail();else if(v==='hist')hist();}
+function render(v){if(v==='overview')overview();else if(v==='detail')detail();else if(v==='hist')hist();
+ // detail carries its own live+source stamp in the navy header — hide the topbar one so
+ // "live" isn't shown twice and the header is the topmost element (tops align).
+ const fm=document.getElementById('freshMeta');if(fm)fm.style.display=(v==='detail')?'none':'flex';}
 
 /* ---------- overview ---------- */
 function overview(){const k=P.kpis||{};
@@ -288,15 +291,15 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
  const k=d.kpi;
  const crumb=STORE?'':`<div class="crumb"><a onclick="nav('overview')">Overview</a> › <b>${d.name} · #${d.id}</b></div>`;
  const navhead=`<div class="navhead"><div><span class="brand2">VantEdge Auto</span><span class="sub2">Take 5 · Time Report</span></div>
-  <div class="rt"><b>${d.name} · #${d.id}</b><br>${P.date||''} · <span class="live">● live</span> · ${P.asof||''}</div></div>`;
+  <div class="rt"><b>${d.name} · #${d.id}</b><br>${P.date||''} · <span class="live">● live</span> · ${P.asof||''}${P.sourced?`<br><small>${P.sourced}</small>`:''}</div></div>`;
  el.innerHTML=`${crumb}${STORE?'':`<div id="picker">${storePicker()}</div>`}
   ${navhead}
   <div class="subline">${d.region||''} · opened ${d.open||'—'}</div>
   <div class="detailwrap ${STORE?'nomsg':''}"><div class="dmain">
   <div class="kpis">
-   <div class="kpi ${kcls(k.carsStatus)}" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm??'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm??'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
+   <div class="kpi ${kcls(k.carsStatus)}" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm!=null?Math.round(k.carsNorm):'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm!=null?Math.round(k.carsNorm):'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
    <div class="kpi ${kcls(k.aroStatus)}" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
-   <div class="kpi ${kcls(k.netStatus)}" title="Net so far $${Math.round(k.net).toLocaleString()} · 4-week average by this hour $${k.netNorm??'—'} · ${pc(k.netPace)} vs that average"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()} <span class="vsub">/ $${k.netNorm??'—'} 4-wk</span></div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} vs 4-wk</div></div>
+   <div class="kpi ${kcls(k.netStatus)}" title="Net so far $${Math.round(k.net).toLocaleString()} · 4-week average by this hour $${k.netNorm!=null?Math.round(k.netNorm).toLocaleString():'—'} · ${pc(k.netPace)} vs that average"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()} <span class="vsub">/ $${k.netNorm!=null?Math.round(k.netNorm).toLocaleString():'—'} 4-wk</span></div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} vs 4-wk</div></div>
    <div class="kpi ${kcls(k.big4Status)}" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
    <div class="kpi ${kcls(k.lhpcStatus)}" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
    ${(()=>{const tk=Math.round(k.task||0);const st=tk>=80?'sg':(tk>=50?'sa':'sr');const dc=tk>=80?'pos':(tk>=50?'amb':'neg');return `<div class="kpi ${st}" title="Today's daily-task completion for this store"><div class="l">Task</div><div class="v">${tk}%</div><div class="d ${dc}">done today</div></div>`;})()}
@@ -411,10 +414,9 @@ function drawMain(d){const L=d.hours;
    {type:'line',label:'Big 4 %',data:b.run,borderColor:C.teal,backgroundColor:'rgba(14,116,144,.10)',fill:true,borderWidth:2.4,tension:.35},
    {type:'line',label:'goal',data:L.map(()=>b.target),borderColor:C.green,borderDash:[4,3],borderWidth:1.4,pointRadius:0}]},options:{...G,scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:C.line}}}}});
  const l=d.lhpc;if(document.getElementById('c_lhpc'))mk('c_lhpc',{data:{labels:L,datasets:[
-   {type:'bar',label:'hours',data:l.hours,backgroundColor:'rgba(108,79,182,.18)',yAxisID:'y1'},
-   {type:'line',label:'rolling',data:l.roll,borderColor:C.purple,borderWidth:2.4,tension:.35,yAxisID:'y'},
-   {type:'line',label:'target',data:L.map(()=>l.target),borderColor:C.red,borderDash:[2,3],borderWidth:1.4,yAxisID:'y',pointRadius:0}]},
-   options:{...G,scales:{x:{grid:{display:false}},y:{position:'left',min:0,max:5,grid:{color:C.line}},y1:{position:'right',min:0,grid:{display:false}}}}});
+   {type:'line',label:'rolling',data:l.roll,borderColor:C.purple,borderWidth:2.4,tension:.35},
+   {type:'line',label:'target',data:L.map(()=>l.target),borderColor:C.red,borderDash:[2,3],borderWidth:1.4,pointRadius:0}]},
+   options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{min:0,max:5,grid:{color:C.line}}}}});
 }
 
 // 4-week drill-in: value labels on every bar + a dashed average line through the historical bars.

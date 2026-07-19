@@ -800,7 +800,7 @@ def main():
     # V4 (C): store login gets the daily-task checklist in the LEFT column (native, so it can
     # save), with the dashboard component on the right. Other tiers render full-width.
     if role == "store" and not mobile:
-        left, mid, right = st.columns([1.05, 5.4, 1.35], gap="small")
+        left, mid, right = st.columns([1.05, 5.9, 1.15], gap="small")
         with left:
             _task_checklist(user)
         with mid:
