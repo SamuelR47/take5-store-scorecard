@@ -635,7 +635,8 @@ def _targets_view(user):
             v = t.get(key)
             row[lab] = v if v is not None else _TGT_DEFAULTS.get(key)
         rows.append(row)
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    # height fits all 15 stores (header + 15 rows ≈ 35px each) so it doesn't scroll at 10
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True, height=568)
     if st.button("Edit targets", type="primary"):
         st.session_state["tgt_editing"] = True; st.rerun()
 
@@ -658,7 +659,7 @@ def _targets_editor(user):
     df = pd.DataFrame(rows)
     edited = st.data_editor(df, key="targets_editor", hide_index=True,
                             use_container_width=True, disabled=["Store"],
-                            column_config={"_id": None})
+                            height=568, column_config={"_id": None})
     name = st.text_input("Your name (saved with each change)", key="tgt_name",
                          placeholder="John Doe")
     if st.button("Save targets", type="primary"):

@@ -230,11 +230,11 @@ function overview(){const k=P.kpis||{};
  document.getElementById('v_overview').innerHTML=`
   <div class="pills">${['All'].concat(Object.keys(P.regions||{})).map((r,i)=>`<button class="${i===0?'on':''}" onclick="regfilter(this,'${r}')">${r==='All'?('All · '+P.rows.length):r}</button>`).join('')}</div>
   <div class="kpis">
-   <div class="kpi nt" title="Stores currently reporting data in this scope"><div class="l">Stores reporting</div><div class="v">${k.stores||P.rows.length}</div><div class="d">live</div></div>
-   <div class="kpi bt" title="Total cars so far across the scope · ${pc(k.carsPace)} vs the cars-weighted 4-week average"><div class="l">Total cars</div><div class="v">${k.cars!=null?Math.round(k.cars):'—'}</div><div class="d ${k.carsPace>=0?'pos':'neg'}">${pc(k.carsPace)} vs 4-wk</div></div>
-   <div class="kpi gt" title="Total net sales so far across the scope"><div class="l">Total net</div><div class="v">${k.net!=null?fmt.net(k.net):'—'}</div><div class="d">so far</div></div>
-   <div class="kpi at" title="Cars-weighted average ARO (total net ÷ total cars) vs the $125 target"><div class="l">Avg ARO</div><div class="v">${k.aro!=null?fmt.aro(k.aro):'—'}</div><div class="d ${k.aro>=125?'pos':'neg'}">vs $125</div></div>
-   <div class="kpi tt" title="Cars-weighted Big 4 attach % across the scope vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4>=53?'pos':'amb'}">goal 53%</div></div>
+   <div class="kpi" title="Stores currently reporting data in this scope"><div class="l">Stores reporting</div><div class="v">${k.stores||P.rows.length}</div><div class="d">live</div></div>
+   <div class="kpi ${k.carsPace>=0?'sg':'sr'}" title="Total cars so far across the scope · ${pc(k.carsPace)} vs the cars-weighted 4-week average"><div class="l">Total cars</div><div class="v">${k.cars!=null?Math.round(k.cars):'—'}</div><div class="d ${k.carsPace>=0?'pos':'neg'}">${pc(k.carsPace)} vs 4-wk</div></div>
+   <div class="kpi" title="Total net sales so far across the scope"><div class="l">Total net</div><div class="v">${k.net!=null?fmt.net(k.net):'—'}</div><div class="d">so far</div></div>
+   <div class="kpi ${k.aro>=125?'sg':'sr'}" title="Cars-weighted average ARO (total net ÷ total cars) vs the $125 target"><div class="l">Avg ARO</div><div class="v">${k.aro!=null?fmt.aro(k.aro):'—'}</div><div class="d ${k.aro>=125?'pos':'neg'}">vs $125</div></div>
+   <div class="kpi ${k.big4>=53?'sg':'sa'}" title="Cars-weighted Big 4 attach % across the scope vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4>=53?'pos':'amb'}">goal 53%</div></div>
   </div>
   <div class="row" style="margin-top:16px">
    <div class="seg"><button onclick="ovv(this,'rank')">Store ranking</button><button onclick="ovv(this,'graph')">Graphs</button><button class="on" onclick="ovv(this,'table')">Table</button></div>
