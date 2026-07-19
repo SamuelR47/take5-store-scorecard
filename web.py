@@ -515,9 +515,20 @@ function drawHist(){const h=P.hist||{stores:[],days:[]};const sel=(h.stores||[])
    scales:{x:{grid:{display:false}},y:{grid:{color:C.line},suggestedMax:isTask?100:undefined,beginAtZero:isTask}}},plugins:[box]});
  document.getElementById('htab').innerHTML='<table><thead><tr><th>Store</th><th>Last-week avg</th><th>Today</th><th>Δ vs last wk</th></tr></thead><tbody>'+sel.map(s=>{const arr=s.metrics[HMETRIC];const t=arr[arr.length-1];const prev=arr.slice(0,-1).filter(v=>v!=null);const avg=prev.length?prev.reduce((a,b)=>a+b,0)/prev.length:0;const df=avg?(((t-avg)/avg)*100).toFixed(0):0;return `<tr><td>${s.name}</td><td>${Math.round(avg)}</td><td>${t==null?'—':Math.round(t)}</td><td class="${df>=0?'pos':'neg'}">${df>=0?'+':''}${df}%</td></tr>`;}).join('')+'</tbody></table>';
 }
-function fit(){try{if(window.frameElement){window.frameElement.style.height=Math.max(680,document.documentElement.scrollHeight+8)+'px';}}catch(e){}}
-function fitLater(){setTimeout(fit,90);}
+// Iframe auto-fit: report TRUE content height to the parent iframe (same-origin, so
+// window.frameElement is reachable). The old version fired once ~90ms after render, which
+// was BEFORE Chart.js finished drawing, so scrollHeight (and thus the frame) under-sized on
+// mobile -> the tall single-column content overflowed the fixed layout box and painted over
+// the native Messages/tasks stacked below. Fix: recompute after full render, on window.load,
+// via several post-draw timeouts, and continuously through ResizeObserver (catches chart draw
+// completion) + MutationObserver (catches drill-in expand/collapse). +24px padding.
+function fit(){try{if(window.frameElement){var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0);window.frameElement.style.height=Math.max(680,h+24)+'px';}}catch(e){}}
+var _fitT=null;function fitSoon(){if(_fitT)clearTimeout(_fitT);_fitT=setTimeout(fit,60);}
+function fitLater(){fit();[90,350,700,1200].forEach(function(d){setTimeout(fit,d);});}
 const _render=render;render=function(v){_render(v);fitLater();};
+window.addEventListener('load',fitLater);window.addEventListener('resize',fitSoon);
+try{var _ro=new ResizeObserver(fitSoon);_ro.observe(document.documentElement);if(document.body)_ro.observe(document.body);}catch(e){}
+try{var _mo=new MutationObserver(fitSoon);if(document.body)_mo.observe(document.body,{childList:true,subtree:true,attributes:true});}catch(e){}
 shell();nav(STORE?'detail':(P.startView||'overview'));fitLater();
 </script>
 """
