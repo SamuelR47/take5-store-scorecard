@@ -762,11 +762,17 @@ def main():
            [data-testid="stSidebar"],section[data-testid="stSidebar"]{
              width:212px!important;min-width:212px!important;transform:none!important;
              visibility:visible!important;margin-left:0!important}
+           /* F9: on desktop the sidebar is force-pinned open (above), so the collapse/expand
+              arrow does nothing — hide it to remove the dead/confusing control. */
+           [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
+           [data-testid="collapsedControl"]{display:none!important}
          }
-         /* D1: the collapse/expand (reopen) control must ALWAYS be reachable at any width so
-            the sidebar can be reopened after closing — never display:none it. */
-         [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
-         [data-testid="collapsedControl"]{display:flex!important;visibility:visible!important}
+         /* F9: on mobile the sidebar is a closable drawer (NOT force-open, per D1), so the
+            reopen control MUST stay reachable to open it again after closing. */
+         @media (max-width:820px){
+           [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
+           [data-testid="collapsedControl"]{display:flex!important;visibility:visible!important}
+         }
          .navbrand{font-weight:800;font-size:1.06rem;padding:8px 6px 16px;line-height:1.2}
          .navbrand span{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:3px}
          [data-testid="stSidebar"] [role="radiogroup"]{gap:2px}
@@ -855,12 +861,13 @@ def main():
         with right:
             _store_messages(user)
     else:
-        # D5: on phone the store view renders the dashboard/KPIs FIRST, then tasks, then
-        # messages (previously tasks+messages sat above the dashboard, burying the KPIs).
+        # D5/F10: on phone the store view renders the dashboard/KPIs FIRST, then messages,
+        # then the daily task checklist LAST (at the very bottom). Plain sequential vertical
+        # st calls — no columns on mobile — so nothing can overlay the dashboard component.
         if role == "store":
             _dashboard_view(tier, allowed, scope, mobile, startview)
-            _task_checklist(user)
             _store_messages(user)
+            _task_checklist(user)
         else:
             _dashboard_view(tier, allowed, scope, mobile, startview)
 
