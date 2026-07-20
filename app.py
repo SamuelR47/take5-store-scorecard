@@ -324,7 +324,7 @@ def _web_detail(sp):
             "now": sp["now"], "hours": sp["hours"],
             "kpi": {"cars": round(sp["cars"]["sofar"]), "carsNorm": sp["cars"].get("norm"),
                     "carsPace": sp["cars"].get("pace_pct"),
-                    "aro": a.get("sofar") or 0, "aroGap": a.get("gap_pct"),
+                    "aro": a.get("sofar") or 0, "aroGap": a.get("gap_pct"), "aroTarget": a.get("target") or 125,
                     "net": round(sp["net"]["sofar"]), "netNorm": sp["net"].get("norm"),
                     "netPace": sp["net"].get("pace_pct"),
                     "big4": b.get("pct") or 0, "lhpc": l.get("day") or 0,

@@ -159,10 +159,13 @@ def data_now_hour(today_rows,o,c):
     return min(max(max(hrs) if hrs else o, o), c)
 
 def count_metric(today_rows,hist,hours,weekday,now_hour,key,today_date):
-    sn=simple_norm(hist,weekday,key,today_date); wn=weighted_norm(hist,weekday,key,today_date)
+    wn=weighted_norm(hist,weekday,key,today_date)
     actual,sofar=_cum_series(today_rows,hours,now_hour,key)
     elapsed=[h for h in hours if h<=now_hour]; future=[h for h in hours if h>now_hour]
-    exp_now=sum(sn.get(h,0) for h in elapsed)
+    # Audit H-1/H-2: ONE baseline everywhere = the winsorized cumulative same-weekday average
+    # at this hour (what the store drill-in shows, same family as the overview). Replaces
+    # simple_norm, which summed per-hour means, ran high, and disagreed with the drill-in.
+    exp_now=wk_norm_at_hour(hist,weekday,key,now_hour,today_date)["avg"] or 0
     pace_pct=((sofar/exp_now)-1)*100 if exp_now else None
     wf=sum(wn.get(h,0) for h in elapsed)
     pf=_clamp(sofar/wf) if wf else 1.0

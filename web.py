@@ -247,16 +247,24 @@ function render(v){if(v==='overview')overview();else if(v==='detail')detail();el
  const fm=document.getElementById('freshMeta');if(fm)fm.style.display=(v==='detail')?'none':'flex';}
 
 /* ---------- overview ---------- */
-function overview(){const k=P.kpis||{};
- document.getElementById('v_overview').innerHTML=`
-  <div class="pills">${['All'].concat(Object.keys(P.regions||{})).map((r,i)=>`<button class="${i===0?'on':''}" onclick="regfilter(this,'${r}')">${r==='All'?('All · '+P.rows.length):r}</button>`).join('')}</div>
-  <div class="kpis">
-   <div class="kpi ${(k.reporting!=null&&k.total!=null)?(k.reporting>=k.total?'sg':'sr'):''}" title="Stores currently reporting live data · ${k.reporting!=null?k.reporting:'?'} of ${k.total!=null?k.total:'?'} in this scope"><div class="l">Stores reporting</div><div class="v">${k.reporting!=null?k.reporting:(k.stores||P.rows.length)}</div><div class="d">${k.total!=null?('of '+k.total):'live'}</div></div>
+function kfor(){const R=rowsF();const live=R.filter(s=>s.cars!=null);
+ const cars=live.reduce((a,s)=>a+(+s.cars||0),0),net=live.reduce((a,s)=>a+(+s.net||0),0);
+ const b4=live.filter(s=>s.big4!=null&&s.cars);const b4c=b4.reduce((a,s)=>a+(+s.cars||0),0);
+ const big4=b4c?Math.round(b4.reduce((a,s)=>a+s.big4*s.cars,0)/b4c*10)/10:null;
+ const aro=cars?Math.round(net/cars*10)/10:null;
+ const fp=(key,total)=>{const D=kpiWkData(key);const v=D.vals||[];if(!v.length||!total)return null;const avg=v.reduce((a,b)=>a+b,0)/v.length;return avg?Math.round((total/avg-1)*1000)/10:null;};
+ return {reporting:live.length,total:R.length,stores:R.length,cars:cars,net:net,aro:aro,big4:big4,carsPace:fp('cars',cars),netPace:fp('net',net)};}
+function kpiStripHTML(){const k=kfor();return `<div class="kpis">
+   <div class="kpi ${(k.reporting!=null&&k.total!=null)?(k.reporting>=k.total?'sg':'sr'):''}" title="Stores currently reporting live data · ${k.reporting} of ${k.total} in this scope"><div class="l">Stores reporting</div><div class="v">${k.reporting}</div><div class="d">of ${k.total}</div></div>
    <div class="kpi clickable ${k.carsPace>=0?'sg':'sr'}" onclick="togKpiWk('cars')" title="Total cars so far across the scope · ${pc(k.carsPace)} vs the 4-week average. Click for the last 4 same-weekdays by this hour + today."><div class="l">Total cars <span class="chev">▾</span></div><div class="v">${k.cars!=null?Math.round(k.cars):'—'}</div><div class="d ${k.carsPace>=0?'pos':'neg'}">${pc(k.carsPace)} vs 4-wk</div></div>
    <div class="kpi clickable ${k.netPace!=null?(k.netPace>=0?'sg':'sr'):''}" onclick="togKpiWk('net')" title="Total net sales so far across the scope · ${pc(k.netPace)} vs the 4-week average. Click for the last 4 same-weekdays by this hour + today."><div class="l">Total net <span class="chev">▾</span></div><div class="v">${k.net!=null?fmt.net(k.net):'—'}</div><div class="d ${k.netPace!=null?(k.netPace>=0?'pos':'neg'):''}">${k.netPace!=null?pc(k.netPace)+' vs 4-wk':'so far'}</div></div>
    <div class="kpi ${k.aro>=125?'sg':'sr'}" title="Cars-weighted average ARO (total net ÷ total cars) vs the $125 target"><div class="l">Avg ARO</div><div class="v">${k.aro!=null?fmt.aro(k.aro):'—'}</div><div class="d ${k.aro>=125?'pos':'neg'}">vs $125</div></div>
    <div class="kpi ${k.big4==null?'':(k.big4>=53?'sg':(k.big4>=32?'sa':'sr'))}" title="Cars-weighted Big 4 attach % across the scope vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4==null?'':(k.big4>=53?'pos':(k.big4>=32?'amb':'neg'))}">goal 53%</div></div>
-  </div>
+  </div>`;}
+function overview(){const k=P.kpis||{};
+ document.getElementById('v_overview').innerHTML=`
+  <div class="pills">${['All'].concat(Object.keys(P.regions||{})).map((r,i)=>`<button class="${i===0?'on':''}" onclick="regfilter(this,'${r}')">${r==='All'?('All · '+P.rows.length):r}</button>`).join('')}</div>
+  <div id="kpiwrap">${kpiStripHTML()}</div>
   <div id="kpiwkbox" class="panel" style="display:none"><div id="kpiwkTitle" style="font-weight:800;font-size:.85rem;margin-bottom:6px;color:var(--navy)"></div><div class="chartbox sm"><canvas id="c_kpiwk"></canvas></div></div>
   <div class="row" style="margin-top:16px">
    <div class="seg"><button onclick="ovv(this,'rank')">Store ranking</button><button onclick="ovv(this,'graph')">Graphs</button><button class="on" onclick="ovv(this,'table')">Table</button></div>
@@ -271,7 +279,7 @@ function overview(){const k=P.kpis||{};
  ovBody();b4store();renderHeat();
 }
 let REGION='All';
-function regfilter(b,r){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');REGION=r;ovBody();b4store();renderHeat();if(KPIWK)drawKpiWk(KPIWK);}
+function regfilter(b,r){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');REGION=r;const w=document.getElementById('kpiwrap');if(w)w.innerHTML=kpiStripHTML();ovBody();b4store();renderHeat();if(KPIWK)drawKpiWk(KPIWK);}
 // H4: Total cars / Total net click-to-expand — fleet totals for the last 4 same-weekdays
 // by this hour + today. Aggregated per the current region filter.
 function togKpiWk(key){const box=document.getElementById('kpiwkbox');if(!box)return;
@@ -336,7 +344,7 @@ function fleet(){const m=OVMETRIC,goal={big4:53,aro:125,lhpc:1.10}[m]||null;
 }
 function b4store(){const arr=rowsF().map(s=>({n:s.name+' '+s.id,v:s.big4,id:s.id})).filter(a=>a.v!=null).sort((a,b)=>a.v-b.v);
  mk('c_b4store',{type:'bar',data:{labels:arr.map(a=>a.n),datasets:[{data:arr.map(a=>a.v),backgroundColor:arr.map(a=>a.v>=53?C.green:(a.v>=32?C.amber:C.red)),borderRadius:4}]},
-  options:{...G,indexAxis:'y',onClick:(e,el)=>{if(el[0])openStore(arr[el[0].index].id);},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Big 4: '+Math.round(c.parsed.x)+'%'}}},scales:{x:{grid:{color:C.line},suggestedMax:100},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+  options:{...G,indexAxis:'y',onClick:(e,el)=>{if(el[0])openStore(arr[el[0].index].id);},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Big 4: '+Math.round(c.parsed.x)+'%'}}},scales:{x:{grid:{color:C.line},suggestedMax:Math.max(100,...arr.map(a=>a.v))},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
 }
 function openStore(id){SEL=id;PICKREG=null;nav('detail');}
 
@@ -353,7 +361,7 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
   <div class="detailwrap ${STORE?'nomsg':''}"><div class="dmain">
   <div class="kpis">
    <div class="kpi ${kcls(k.carsStatus)}" title="Cars so far ${k.cars} · 4-week average by this hour ${k.carsNorm!=null?Math.round(k.carsNorm):'—'} (holidays excluded, outliers capped) · ${pc(k.carsPace)} vs that average"><div class="l">Cars</div><div class="v">${k.cars} <span class="vsub">/ ${k.carsNorm!=null?Math.round(k.carsNorm):'—'} 4-wk</span></div><div class="d ${scls(k.carsStatus)}">${pc(k.carsPace)} vs 4-wk</div></div>
-   <div class="kpi ${kcls(k.aroStatus)}" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $125 target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $125</div></div>
+   <div class="kpi ${kcls(k.aroStatus)}" title="ARO = net ÷ cars = $${Math.round(k.aro)}, vs the $${Math.round(k.aroTarget||125)} target (${pc(k.aroGap)})"><div class="l">ARO ($/car)</div><div class="v">$${Math.round(k.aro)}</div><div class="d ${scls(k.aroStatus)}">${pc(k.aroGap)} vs $${Math.round(k.aroTarget||125)}</div></div>
    <div class="kpi ${kcls(k.netStatus)}" title="Net so far $${Math.round(k.net).toLocaleString()} · 4-week average by this hour $${k.netNorm!=null?Math.round(k.netNorm).toLocaleString():'—'} · ${pc(k.netPace)} vs that average"><div class="l">Net revenue</div><div class="v">$${Math.round(k.net).toLocaleString()} <span class="vsub">/ $${k.netNorm!=null?Math.round(k.netNorm).toLocaleString():'—'} 4-wk</span></div><div class="d ${scls(k.netStatus)}">${pc(k.netPace)} vs 4-wk</div></div>
    <div class="kpi ${kcls(k.big4Status)}" title="Big 4 units ÷ cars, as % of cars = ${Math.round(k.big4)}%, vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${Math.round(k.big4)}%</div><div class="d ${scls(k.big4Status)}">goal 53%</div></div>
    <div class="kpi ${kcls(k.lhpcStatus)}" title="Labor hours per car (cumulative) = ${(+k.lhpc).toFixed(2)}. Lower is leaner. Target 1.10"><div class="l">LHPC</div><div class="v">${(+k.lhpc).toFixed(2)}</div><div class="d ${scls(k.lhpcStatus)}">target 1.10</div></div>
@@ -507,7 +515,7 @@ function drawMain(d){const L=d.hours;
 // 4-week drill-in: value labels on every bar + a dashed average line through the historical bars.
 function drawWk(d,key){const m=d[key];const wk=(m.wk||[]).slice().reverse();const hv=wk.map(x=>x.val);
  const wl=wk.map(x=>x.date).concat(['Today']);const wv=hv.concat([m.sofar]);
- const avg=hv.length?hv.reduce((a,b)=>a+b,0)/hv.length:0;
+ const avg=(m.norm!=null)?m.norm:(hv.length?hv.reduce((a,b)=>a+b,0)/hv.length:0);
  const lab=v=>key==='net'?Math.round(v).toLocaleString():Math.round(v);
  const plug={id:'wk',afterDatasetsDraw:c=>{const{ctx}=c;const meta=c.getDatasetMeta(0).data;ctx.save();
    ctx.font='700 10px -apple-system,sans-serif';ctx.fillStyle='#0F172A';ctx.textAlign='center';
