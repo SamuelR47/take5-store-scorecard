@@ -287,7 +287,7 @@ function kpiWkData(key){const R=rowsF();
   return {labels:arr.map(x=>fd(x.date)),vals:arr.map(x=>+x.val||0),today:today};}
  const byd={};R.forEach(s=>{const d=(P.detail||{})[s.id];const wk=d&&d[key]&&d[key].wk;
   if(wk)wk.forEach(x=>{if(x&&x.date!=null)byd[x.date]=(byd[x.date]||0)+(+x.val||0);});});
- const dates=Object.keys(byd).sort();
+ const dates=Object.keys(byd).sort().slice(-4);
  return {labels:dates.map(fd),vals:dates.map(d=>byd[d]),today:today};}
 function drawKpiWk(key){const D=kpiWkData(key);
  const labels=D.labels.concat(['Today']);const vals=D.vals.concat([D.today]);
@@ -301,7 +301,7 @@ function drawKpiWk(key){const D=kpiWkData(key);
      ctx.setLineDash([]);ctx.fillStyle='#14273F';ctx.textAlign='left';ctx.fillText('avg '+lab(avg),x1+3,y-2);}
    ctx.restore();}};
  mk('c_kpiwk',{type:'bar',data:{labels:labels,datasets:[{data:vals,backgroundColor:labels.map((_,i)=>i===labels.length-1?C.blue:'#B5D4F4'),borderRadius:3}]},
-  options:{...G,layout:{padding:{top:16,right:48}},plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});}
+  options:{...G,layout:{padding:{top:16,right:48}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>lab(c.parsed.y),footer:()=>hv.length?'avg '+lab(avg):''}}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});}
 function renderHeat(){const el=document.getElementById('ov_heat');if(el)el.innerHTML=heatmap();}
 function heatmap(){const R=rowsF().filter(s=>s.heat&&s.heat.length);const hh=P.heatHours||[];
  if(!R.length||!hh.length)return '<div class="empty">No heat data.</div>';

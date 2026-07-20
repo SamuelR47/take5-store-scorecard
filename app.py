@@ -152,13 +152,14 @@ def _cards_day(s):
     def aro_c(v): return _hex(GREEN) if v>=125 else (_hex(AMBER) if v>=117.5 else _hex(RED))
     def b4_c(v): return _hex(GREEN) if v>=53 else (_hex(AMBER) if v>=32 else _hex(RED))
     def lh_c(v): return _hex(GREEN) if v<=1.10 else (_hex(AMBER) if v<=1.25 else _hex(RED))
+    def task_c(v): return _hex(NAVY) if v is None else (_hex(GREEN) if v>=80 else (_hex(AMBER) if v>=50 else _hex(RED)))
     return [
         ("Cars", f"{s['cars']:,}" if s['cars'] is not None else "—", "full day", _hex(NAVY)),
         ("ARO", f"${s['aro']:,.2f}" if s['aro'] is not None else "—", "target $125", aro_c(s['aro']) if s['aro'] is not None else _hex(NAVY)),
         ("Net revenue", f"${s['net']:,.0f}" if s['net'] is not None else "—", "full day", _hex(GREEN)),
         ("Big 4 attach %", f"{s['big4']:.0f}%" if s['big4'] is not None else "—", "goal 53%", b4_c(s['big4']) if s['big4'] is not None else _hex(NAVY)),
         ("LHPC", f"{s['lhpc']:.2f}" if s['lhpc'] is not None else "—", "target 1.10", lh_c(s['lhpc']) if s['lhpc'] is not None else _hex(NAVY)),
-        ("Differentials", f"{s['diff']}", f"{(s['diff_pct'] or 0):.0f}% of cars", _hex(PURPLE)),
+        ("Task", f"{s['task']:.0f}%" if s.get('task') is not None else "—", "done", task_c(s.get('task'))),
     ]
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -172,6 +173,16 @@ def _multiday_b64(store, hourstamp):
     summ = calc.days_back_summaries(rows, SCORECARD_DAYS, today)
     if not summ:
         return out
+    # H2 (all cards): per-day task-completion % so Yesterday + Weekly mirror the dashboard's
+    # Task KPI (TASKS_BY_DOW for that day's weekday x that date's completions). Sparse for
+    # older days (feature is new) -> shows "-"/0%.
+    for _sd in summ:
+        try:
+            _wd = dt.date.fromisoformat(_sd["date"]).weekday(); _tl = TASKS_BY_DOW.get(_wd, [])
+            _dc = datastore.get_completions(_sd["date"]).get(store, {})
+            _sd["task"] = round(len([t for t in _tl if t in _dc]) / len(_tl) * 100) if _tl else None
+        except Exception:
+            _sd["task"] = None
     y = summ[0]
     try:
         d = dt.date.fromisoformat(y["date"]); ds = d.strftime("%A, %b %-d %Y"); out["ylabel"] = " (" + d.strftime("%b %-d") + ")"
