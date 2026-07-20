@@ -437,11 +437,14 @@ def build_web_payload(tier, allowed, scope_label, stamp):
                 if dd is None:
                     continue
                 byd[dd] = byd.get(dd, 0) + (x.get("val") or 0)
-        # Pin to the 4 most-recent same-weekday dates. Stores don't always share the exact
-        # same 4 dates (a store missing a pull reaches back an extra week), so the union can
-        # be 5+; take the 4 newest so the fleet drill-in always shows 4 historical + Today.
-        dates = sorted(byd)[-4:]
-        return [{"date": d, "val": round(byd[d])} for d in dates]
+        # Recent same-weekdays, then DROP statistical outliers (MAD-based, calc._reject):
+        # a data-gap day (e.g. one where only a few stores reported) reads as an anomalously
+        # low fleet total and would deflate the average — exclude it so the bars + avg line
+        # reflect normal same-weekdays and reconcile with the KPI.
+        dates = sorted(byd)[-5:]
+        _, keep_idx = calc._reject([byd[d] for d in dates])
+        kept = [dates[i] for i in keep_idx][-4:]
+        return [{"date": d, "val": round(byd[d])} for d in kept]
     kpiWk = {"cars": _aggwk("cars"), "net": _aggwk("net")}
     sourced = ""
     stale = False

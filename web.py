@@ -280,6 +280,8 @@ function togKpiWk(key){const box=document.getElementById('kpiwkbox');if(!box)ret
  const t=document.getElementById('kpiwkTitle');
  if(t)t.textContent=(key==='cars'?'Total cars':'Total net')+' — last 4 same-weekdays by this hour + today';
  drawKpiWk(key);fitLater();}
+function _median(a){const s=[...a].sort((x,y)=>x-y);const n=s.length;if(!n)return 0;return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2;}
+function _rejectIdx(vals,k){k=k||3;if(vals.length<3)return vals.map((_,i)=>i);const m=_median(vals);const mad=_median(vals.map(v=>Math.abs(v-m)));if(!mad)return vals.map((_,i)=>i);const th=k*mad;const idx=[];vals.forEach((v,i)=>{if(Math.abs(v-m)<=th)idx.push(i);});return idx.length?idx:vals.map((_,i)=>i);}
 function kpiWkData(key){const R=rowsF();
  const fd=d=>{d=String(d||'');return d.length>=10?(d.slice(5,7)+'/'+d.slice(8,10)):d;};
  const today=R.reduce((a,s)=>a+(+s[key]||0),0);
@@ -287,7 +289,8 @@ function kpiWkData(key){const R=rowsF();
   return {labels:arr.map(x=>fd(x.date)),vals:arr.map(x=>+x.val||0),today:today};}
  const byd={};R.forEach(s=>{const d=(P.detail||{})[s.id];const wk=d&&d[key]&&d[key].wk;
   if(wk)wk.forEach(x=>{if(x&&x.date!=null)byd[x.date]=(byd[x.date]||0)+(+x.val||0);});});
- const dates=Object.keys(byd).sort().slice(-4);
+ let dates=Object.keys(byd).sort().slice(-5);
+ const idx=_rejectIdx(dates.map(d=>byd[d]),3); dates=idx.map(i=>dates[i]).slice(-4);
  return {labels:dates.map(fd),vals:dates.map(d=>byd[d]),today:today};}
 function drawKpiWk(key){const D=kpiWkData(key);
  const labels=D.labels.concat(['Today']);const vals=D.vals.concat([D.today]);
@@ -301,7 +304,7 @@ function drawKpiWk(key){const D=kpiWkData(key);
      ctx.setLineDash([]);ctx.fillStyle='#14273F';ctx.textAlign='left';ctx.fillText('avg '+lab(avg),x1+3,y-2);}
    ctx.restore();}};
  mk('c_kpiwk',{type:'bar',data:{labels:labels,datasets:[{data:vals,backgroundColor:labels.map((_,i)=>i===labels.length-1?C.blue:'#B5D4F4'),borderRadius:3}]},
-  options:{...G,layout:{padding:{top:16,right:48}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>lab(c.parsed.y),footer:()=>hv.length?'avg '+lab(avg):''}}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});}
+  options:{...G,layout:{padding:{top:16,right:48}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>lab(c.parsed.y),footer:()=>hv.length?'avg '+lab(avg):''}}},scales:{x:{grid:{display:false},ticks:{font:{size:12}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});}
 function renderHeat(){const el=document.getElementById('ov_heat');if(el)el.innerHTML=heatmap();}
 function heatmap(){const R=rowsF().filter(s=>s.heat&&s.heat.length);const hh=P.heatHours||[];
  if(!R.length||!hh.length)return '<div class="empty">No heat data.</div>';
@@ -514,7 +517,7 @@ function drawWk(d,key){const m=d[key];const wk=(m.wk||[]).slice().reverse();cons
      ctx.setLineDash([]);ctx.fillStyle='#14273F';ctx.textAlign='left';ctx.fillText('avg '+lab(avg),x1+3,y-2);}
    ctx.restore();}};
  mk('c_'+key+'wk',{type:'bar',data:{labels:wl,datasets:[{data:wv,backgroundColor:wl.map((_,i)=>i===wl.length-1?C.blue:'#B5D4F4'),borderRadius:3}]},
-  options:{...G,layout:{padding:{top:16,right:40}},plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});
+  options:{...G,layout:{padding:{top:16,right:40}},plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:12}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});
 }
 
 function drawDriver(d,i){const x=(d.drivers||[])[i];if(!x||!document.getElementById('c_arod'+i))return;const c=x.chart||{};
