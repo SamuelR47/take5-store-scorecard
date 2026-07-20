@@ -167,9 +167,9 @@ table.heat th{background:var(--soft);color:var(--mute);font-weight:700;font-size
 .row2{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;margin-top:18px;margin-bottom:12px;align-items:stretch}
 .card2{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px;height:100%}
 .card2 .sh2{font-weight:800;font-size:1rem;margin-bottom:10px}.card2 .sh2 .sub{font-weight:600}
-.expl2{display:grid;gap:9px}
-.pbox .h2{font-weight:800;color:var(--navy);font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
-.pbox{font-size:.79rem;color:var(--ink);line-height:1.4}
+.expl2{display:grid;gap:7px}
+.pbox .h2{font-weight:800;color:var(--navy);font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px}
+.pbox{font-size:.72rem;color:var(--ink);line-height:1.34}
 .dmsg{position:sticky;top:8px}
 .msgbox{background:#FBF4E9;border:1px solid #E9D9BE;border-radius:12px;padding:14px 16px}
 .msgh{font-weight:800;font-size:.9rem;margin-bottom:10px;color:#8A5A12}
@@ -336,12 +336,10 @@ function detail(){const d=(P.detail||{})[SEL];const el=document.getElementById('
   </div>${STORE?'':`<aside class="dmsg">${msgPanel(d)}</aside>`}</div>`;
  drawMain(d);
 }
-function scoreSection(d){const sc=d.scorecards||{};const k=d.kpi;
+function scoreSection(d){const sc=d.scorecards||{};
  const dl=(b64,fn,label)=>b64?`<a class="scbtn" href="data:application/pdf;base64,${b64}" download="${fn}">${label}</a>`:`<span class="scbtn dis">${label} (n/a)</span>`;
- const tiles=[['Cars',k.cars,scls(k.carsStatus)],['ARO','$'+Math.round(k.aro),scls(k.aroStatus)],['Net','$'+Math.round(k.net).toLocaleString(),scls(k.netStatus)],['Big 4',Math.round(k.big4)+'%',scls(k.big4Status)],['LHPC',(+k.lhpc).toFixed(2),scls(k.lhpcStatus)]]
-  .map(t=>`<div class="sctile ${t[2]}"><div class="l">${t[0]}</div><div class="v">${t[1]}</div></div>`).join('');
- return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.navy}"></div><span class="t">Score cards</span><span class="n">today's KPIs + printable cards</span></div>
-  <div class="sctiles">${tiles}</div>
+ // G7: KPI tiles removed — they duplicate the top KPI strip. Keep header + printable-card buttons.
+ return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.navy}"></div><span class="t">Score cards</span><span class="n">printable cards</span></div>
   <div class="scrow">${dl(sc.today,d.id+'_today.pdf','Today')}${dl(sc.yesterday,d.id+'_yesterday.pdf','Yesterday'+(sc.ylabel||''))}${dl(sc.week,d.id+'_week.pdf','Last 7 days')}</div></div>`;
 }
 function storePicker(){if(STORE)return '';const regs=P.regions||{};let cur=PICKREG;
@@ -382,8 +380,8 @@ function cumSection(title,m,color,key,d){
     <div class="expand" id="${key}wk"><div class="sub">Last 4 same-weekdays by this hour + today</div><div class="chartbox sm"><canvas id="c_${key}wk"></canvas></div></div></div>
    <div class="box ${combCls}" title="${tComb}"><div class="bl">Projected vs target</div><div class="bsub">${tgt!=null&&tgtSrc?tgtSrc:'pace-scaled'}</div>
     <div class="triple"><div><div class="big" style="color:${color}">${fv(proj)}</div><div class="cap">projected</div></div>
-     <div><div class="mid">${tgt!=null?fv(tgt):'—'}</div><div class="cap">target</div></div>
-     <div><div class="mid ${gapCls}">${gapTxt}</div><div class="cap">gap</div></div></div></div>
+     <div><div class="mid ${gapCls}">${gapTxt}</div><div class="cap">gap</div></div>
+     <div><div class="mid">${tgt!=null?fv(tgt):'—'}</div><div class="cap">target</div></div></div></div>
    ${fleetBox}
   </div>
   <div><div class="legend"><span class="lg"><span style="background:${C.blue}"></span>Actual</span><span class="lg" style="color:${C.green}"><span style="border-top:2px dashed ${C.green};background:none;height:0"></span>Projected</span><span class="lg" style="color:${C.red}"><span style="border-top:2px dotted ${C.red};background:none;height:0"></span>Target</span></div>
@@ -395,7 +393,8 @@ function moversSection(d){const mv=d.movers||[];
    (mv.length?`<div class="drivers">${mv.map(x=>`<div class="drv ${x.st}" title="${x.s}"><div class="dt">${x.t}</div><div class="dm ${scls(x.st)}">${x.m}</div><div class="ds">${x.s}</div></div>`).join('')}</div>`:`<div class="sub">Nothing notable yet.</div>`)+`</div>`;
  const how=`<div class="card2"><div class="sh2">How to read this</div><div class="expl2">
    <div class="pbox"><div class="h2">4-Week Comparison</div>Today so far vs a <b>normal ${wd}</b> — the simple average of the last 4 same-weekdays at this same time. <b>+%</b> ahead, <b>−%</b> behind.</div>
-   <div class="pbox"><div class="h2">Projected</div>Where the day is trending by close: <b>today's banked total</b> plus the rest of a typical day, nudged by how today is pacing. An estimate, not a promise.</div></div></div>`;
+   <div class="pbox"><div class="h2">Projected</div>Where the day is trending by close: <b>today's banked total</b> plus the rest of a typical day, nudged by how today is pacing. An estimate, not a promise.</div>
+   <div class="pbox"><div class="h2">Target</div>The projected finish vs an <b>end-of-day goal</b>. Cars &amp; Net targets are the 4-week average nudged by a set boost %; ARO, Big 4 and LHPC are fixed goals. <b>+</b> ahead, <b>−</b> behind.</div></div></div>`;
  return `<div class="row2">${mov}${how}</div>`;
 }
 function aroSection(d){const a=d.aro;
@@ -443,18 +442,26 @@ function drawMain(d){const L=d.hours;
  });
  const a=d.aro;if(document.getElementById('c_aro'))mk('c_aro',{data:{labels:L,datasets:[
    {type:'line',label:'ARO',data:a.run,borderColor:C.blue,backgroundColor:'rgba(46,111,183,.08)',fill:true,borderWidth:2.4,tension:.35},
-   lineTgt(L.map(()=>a.target||125))]},options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{grid:{color:C.line}}}}});
- const b=d.big4;if(document.getElementById('c_big4'))mk('c_big4',{data:{labels:L,datasets:[
+   lineTgt(L.map(()=>a.target||125))]},options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{
+     // G9: add "Cars" (cumulative cars at that hour, from the Cars section series) below ARO + Target.
+     afterBody:items=>{if(!items||!items.length)return '';const i=items[0].dataIndex;const cv=(d.cars&&d.cars.actual)?d.cars.actual[i]:null;return cv!=null?'Cars: '+Math.round(cv):'';}}}},scales:{x:{grid:{display:false}},y:{grid:{color:C.line}}}}});
+ const b=d.big4;if(document.getElementById('c_big4')){
+   // G6: dynamic y-max — 100 is the floor; grow above 100 if any attach value exceeds it so >100% is visible.
+   const b4pk=Math.max(100,...(b.run||[]).filter(v=>v!=null),b.target||0);const b4max=Math.max(100,Math.ceil(b4pk/10)*10);
+   mk('c_big4',{data:{labels:L,datasets:[
    {type:'line',label:'Big 4 %',data:b.run,borderColor:C.teal,backgroundColor:'rgba(14,116,144,.10)',fill:true,borderWidth:2.4,tension:.35},
-   {type:'line',label:'goal',data:L.map(()=>b.target),borderColor:C.green,borderDash:[4,3],borderWidth:1.4,pointRadius:0}]},options:{...G,scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:C.line}}}}});
+   {type:'line',label:'goal',data:L.map(()=>b.target),borderColor:C.green,borderDash:[4,3],borderWidth:1.4,pointRadius:0}]},options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':Math.round(c.parsed.y)+'%')}}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,max:b4max,grid:{color:C.line}}}}});}
  const l=d.lhpc;if(document.getElementById('c_lhpc'))mk('c_lhpc',{data:{labels:L,datasets:[
-   {type:'line',label:'rolling',data:l.roll,borderColor:C.purple,borderWidth:2.4,tension:.35},
-   {type:'line',label:'target',data:L.map(()=>l.target),borderColor:C.red,borderDash:[2,3],borderWidth:1.4,pointRadius:0}]},
-   options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{min:0,max:5,grid:{color:C.line}}}}});
+   // G2: per-hour labor hours (l.hours = per-period diff of cumulative labor hrs) as muted bars
+   // BEHIND the lines, on an auto-scaled secondary right axis (y2). order:2 draws them first.
+   {type:'bar',label:'labor hrs',data:l.hours,yAxisID:'y2',order:2,backgroundColor:'rgba(108,79,182,.16)',borderWidth:0},
+   {type:'line',label:'rolling',data:l.roll,borderColor:C.purple,borderWidth:2.4,tension:.35,order:0},
+   {type:'line',label:'target',data:L.map(()=>l.target),borderColor:C.red,borderDash:[2,3],borderWidth:1.4,pointRadius:0,order:1}]},
+   options:{...G,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{min:0,max:5,grid:{color:C.line}},y2:{position:'right',beginAtZero:true,grid:{display:false}}}}});
 }
 
 // 4-week drill-in: value labels on every bar + a dashed average line through the historical bars.
-function drawWk(d,key){const m=d[key];const wk=m.wk||[];const hv=wk.map(x=>x.val);
+function drawWk(d,key){const m=d[key];const wk=(m.wk||[]).slice().reverse();const hv=wk.map(x=>x.val);
  const wl=wk.map(x=>x.date).concat(['Today']);const wv=hv.concat([m.sofar]);
  const avg=hv.length?hv.reduce((a,b)=>a+b,0)/hv.length:0;
  const lab=v=>key==='net'?Math.round(v).toLocaleString():Math.round(v);

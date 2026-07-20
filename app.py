@@ -41,9 +41,9 @@ def _hex(h): h=h.lstrip("#"); return tuple(int(h[i:i+2],16) for i in (0,2,4))
 
 def _guide_path():
     here = os.path.dirname(os.path.abspath(__file__))
-    for p in (os.path.join(here, "Store_Level_Dashboard_Guide_V3.pdf"),
-              os.path.join(os.getcwd(), "Store_Level_Dashboard_Guide_V3.pdf"),
-              "Store_Level_Dashboard_Guide_V3.pdf"):
+    for p in (os.path.join(here, "Store_Level_Dashboard_Guide_V4.pdf"),
+              os.path.join(os.getcwd(), "Store_Level_Dashboard_Guide_V4.pdf"),
+              "Store_Level_Dashboard_Guide_V4.pdf"):
         if os.path.exists(p): return p
     return None
 
@@ -240,7 +240,7 @@ def _guide_body():
         try:
             with open(path, "rb") as f:
                 st.download_button("⬇  Download the guide (PDF)", f.read(),
-                                   file_name="Store_Level_Dashboard_Guide.pdf",
+                                   file_name="Store_Level_Dashboard_Guide_V4.pdf",
                                    mime="application/pdf", use_container_width=True)
         except Exception:
             pass
@@ -250,7 +250,7 @@ def _guide_body():
             st.image(im, use_container_width=True)
     elif not path:
         st.info("The store guide file isn't in this deployment. Make sure "
-                "Store_Level_Dashboard_Guide_V3.pdf is uploaded alongside the app.")
+                "Store_Level_Dashboard_Guide_V4.pdf is uploaded alongside the app.")
     else:
         st.info("Couldn't render the guide inline here — use the download button above to open the PDF.")
 
@@ -566,6 +566,8 @@ def _daily_task_admin(user):
     Rendered as a plain HTML table (no pandas Styler — Styler.applymap was removed upstream)."""
     now = dt.datetime.now(CENTRAL); today = now.strftime("%Y-%m-%d"); wd = now.weekday()
     tasks = TASKS_BY_DOW.get(wd, [])
+    # G5: DM sees only its own stores; admin sees all 15 (user["stores"] == STORE_CODES).
+    stores = list(user.get("stores") or STORE_CODES)
     st.markdown("#### Daily task")
     st.caption(f"{DOW_FULL[wd]} · {today} — green = complete")
     try:
@@ -575,7 +577,7 @@ def _daily_task_admin(user):
     def _pcol(p): return "#158A5A" if p >= 80 else ("#B57611" if p >= 50 else "#D0342C")
     th = "".join(f"<th>{t}</th>" for t in tasks)
     body = ""
-    for s in STORE_CODES:
+    for s in stores:
         d = comp.get(s, {}); done = sum(1 for t in tasks if t in d)
         pct = round(done / len(tasks) * 100) if tasks else 0
         cells = "".join(('<td class="ok">&#10003;</td>' if t in d else "<td></td>") for t in tasks)
@@ -593,12 +595,16 @@ def _daily_task_admin(user):
 
 
 def _messages_admin(user):
-    """Admin Messages tab: compose a one-way message to a single store + recent-sent list."""
+    """Admin/DM Messages tab: compose a one-way message to a single store + recent-sent list.
+    G5: DM is scoped to its own stores; admin keeps all 15."""
     import pandas as pd
-    labels = {s: f"{CITY.get(s, s)} #{s}" for s in STORE_CODES}
+    # G5: scope the compose picker + labels to the user's stores (DM = own; admin = all 15).
+    stores = list(user.get("stores") or STORE_CODES)
+    is_dm = user.get("role") == "district"
+    labels = {s: f"{CITY.get(s, s)} #{s}" for s in stores}
     st.markdown("#### Messages")
     st.caption("Send a message to one store. It shows on that store's scorecard (right side).")
-    store = st.selectbox("Store", STORE_CODES, format_func=lambda s: labels[s], key="msg_store")
+    store = st.selectbox("Store", stores, format_func=lambda s: labels.get(s, s), key="msg_store")
     body = st.text_area("Message", key="msg_body", placeholder="")
     name = st.text_input("Your name", key="msg_name", placeholder="John Doe")
     if st.button("Send message", type="primary"):
@@ -617,6 +623,10 @@ def _messages_admin(user):
         sent = datastore.get_sent(50)
     except Exception:
         sent = []
+    # G5: a DM only sees messages sent to its own stores; admin sees all.
+    if is_dm:
+        _own = {str(s) for s in stores}
+        sent = [m for m in sent if str(m.get("to_store")) in _own]
     if not sent:
         st.caption("No messages sent yet."); return
     for m in sent:
@@ -812,7 +822,11 @@ def main():
     # starts on. Targets renders the native view+editor (saves go through the server).
     startview = "overview"
     if role in ("admin", "district") and tier in ("admin", "district"):
-        items = ["Overview", "Store detail", "Historical"] + (["Daily task", "Targets", "Messages"] if role == "admin" else [])
+        # G5: DM (district) also gets Daily task + Messages, scoped to its own stores.
+        # Targets stays admin-only.
+        items = (["Overview", "Store detail", "Historical"]
+                 + (["Daily task", "Targets", "Messages"] if role == "admin"
+                    else ["Daily task", "Messages"] if role == "district" else []))
         with st.sidebar:
             st.markdown("<div class='navbrand'>VantEdge Auto<span>Take 5 · Scorecard</span></div>",
                         unsafe_allow_html=True)
