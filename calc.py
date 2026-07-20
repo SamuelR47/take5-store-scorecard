@@ -150,6 +150,14 @@ def _cum_series(today_rows,hours,now_hour,key):
     sofar=cum[max(cum)] if cum else 0.0
     return arr,sofar
 
+def data_now_hour(today_rows,o,c):
+    """The 'current' hour anchored to DATA, not the wall clock: the last hour that actually
+    has a pull. The H:55 pull closes hour H, so the latest pull-hour is the last complete
+    hour. Matches the heat map and stops the graphs/pace/projection from comparing partial
+    data against a fuller-hour norm (the off-by-one that made stores look extra 'behind')."""
+    hrs=[row_hour(r) for r in (today_rows or [])]; hrs=[h for h in hrs if h is not None]
+    return min(max(max(hrs) if hrs else o, o), c)
+
 def count_metric(today_rows,hist,hours,weekday,now_hour,key,today_date):
     sn=simple_norm(hist,weekday,key,today_date); wn=weighted_norm(hist,weekday,key,today_date)
     actual,sofar=_cum_series(today_rows,hours,now_hour,key)
@@ -281,7 +289,7 @@ def build_drivers(weekday, cars, aro, net, big4, lhpc):
 # ---------- full builders ----------
 def build_store(store, city, region, today_rows, hist, now, targets=None):
     weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1))
-    now_hour=min(max(now.hour,o),c)
+    now_hour=data_now_hour(today_rows,o,c)  # anchor to last completed pull, not wall clock
     latest=today_rows[-1] if today_rows else {}
     td=row_date(latest) if today_rows else None
     cars=count_metric(today_rows,hist,hours,weekday,now_hour,"cars",td)
@@ -344,7 +352,7 @@ def build_store(store, city, region, today_rows, hist, now, targets=None):
             "ops":ops,"status":status,"drivers":drivers}
 
 def build_admin_row(store, city, today_rows, hist, now):
-    weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1)); now_hour=min(max(now.hour,o),c)
+    weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1)); now_hour=data_now_hour(today_rows,o,c)
     if not today_rows:
         return {"id":store,"name":city,"open":"—","cars":None,"net":None,"aro":None,"lhpc":None,
                 "big4":None,"diff":0,"diff_pct":None,"pace":None,"heat":[None]*len(hours),"breakdown":{}}

@@ -39,6 +39,19 @@ st.markdown("""<style>
 RGB = {"g": GREEN, "r": RED, "a": AMBER, "flat": NAVY}
 def _hex(h): h=h.lstrip("#"); return tuple(int(h[i:i+2],16) for i in (0,2,4))
 
+def _fmt_sent(ts):
+    """Message timestamps come back from Supabase in UTC. Show them in Central, am/pm."""
+    if not ts:
+        return ""
+    try:
+        t = dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=dt.timezone.utc)
+        return t.astimezone(CENTRAL).strftime("%b %-d · %-I:%M %p")
+    except Exception:
+        return str(ts)[:16].replace("T", " ")
+
+
 def _guide_path():
     here = os.path.dirname(os.path.abspath(__file__))
     for p in (os.path.join(here, "Store_Level_Dashboard_Guide_V4.pdf"),
@@ -354,7 +367,7 @@ def build_web_payload(tier, allowed, scope_label, stamp):
                      "netPace": sp["net"].get("pace_pct")})
         d = _web_detail(sp)
         d["messages"] = [{"from": m.get("from_user"), "body": m.get("body"),
-                          "when": (m.get("sent_at") or "")[:16].replace("T", " ")}
+                          "when": _fmt_sent(m.get("sent_at"))}
                          for m in datastore.get_inbox("store", s)]
         # V3 score cards reused: today built fresh, yesterday+week from the hourly cache
         # (~9 KB/store base64 -> ~0.13 MB for all 15, measured; safe to embed, cf. review M6).
@@ -413,7 +426,11 @@ def build_web_payload(tier, allowed, scope_label, stamp):
                 if dd is None:
                     continue
                 byd[dd] = byd.get(dd, 0) + (x.get("val") or 0)
-        return [{"date": d, "val": round(byd[d])} for d in sorted(byd)]
+        # Pin to the 4 most-recent same-weekday dates. Stores don't always share the exact
+        # same 4 dates (a store missing a pull reaches back an extra week), so the union can
+        # be 5+; take the 4 newest so the fleet drill-in always shows 4 historical + Today.
+        dates = sorted(byd)[-4:]
+        return [{"date": d, "val": round(byd[d])} for d in dates]
     kpiWk = {"cars": _aggwk("cars"), "net": _aggwk("net")}
     sourced = ""
     stale = False
@@ -583,7 +600,7 @@ def _store_messages(user):
     for m in msgs:
         body = html.escape(m.get("body") or "")
         frm = html.escape(m.get("from_user") or "")
-        when = (m.get("sent_at") or "")[:16].replace("T", " ")
+        when = _fmt_sent(m.get("sent_at"))
         st.markdown(
             f"<div class='smsg'><div class='smsg-b'>{body}</div>"
             f"<div class='smsg-m'>{frm} · {when}</div></div>", unsafe_allow_html=True)
@@ -661,7 +678,7 @@ def _messages_admin(user):
         mid = m.get("id")
         to = labels.get(str(m.get("to_store")), m.get("to_store") or m.get("to_scope"))
         c = st.columns([2.1, 2.4, 5, 1.1])
-        c[0].caption((m.get("sent_at") or "")[:16].replace("T", " "))
+        c[0].caption(_fmt_sent(m.get("sent_at")))
         c[1].markdown(f"**{to}**")
         c[2].markdown(f"{m.get('body','')}  \n<span style='color:#5B6472;font-size:.78rem'>"
                       f"{m.get('from_user','')}</span>", unsafe_allow_html=True)
