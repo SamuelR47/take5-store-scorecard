@@ -446,6 +446,16 @@ def build_web_payload(tier, allowed, scope_label, stamp):
         kept = [dates[i] for i in keep_idx][-4:]
         return [{"date": d, "val": round(byd[d])} for d in kept]
     kpiWk = {"cars": _aggwk("cars"), "net": _aggwk("net")}
+    # Overview pace = fleet total today vs the fleet 4-week average (same numbers the drill-in
+    # shows), so the KPI matches the graph. Replaces the old mean-of-per-store-pace, which
+    # could disagree with the totals (e.g. total up but avg store behind).
+    def _fleetpace(arr, total):
+        if not arr or not total:
+            return None
+        avg = sum(x["val"] for x in arr) / len(arr)
+        return round((total / avg - 1) * 100, 1) if avg else None
+    kpis["carsPace"] = _fleetpace(kpiWk["cars"], tc)
+    kpis["netPace"] = _fleetpace(kpiWk["net"], tn)
     sourced = ""
     stale = False
     stale_min = None
