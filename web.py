@@ -201,7 +201,7 @@ tbody tr{cursor:pointer}tbody tr:hover{background:var(--soft)}tr:last-child td{b
 <script>
 const P=/*__PAYLOAD__*/;
 const C={navy:'#14273F',red:'#D0342C',blue:'#2E6FB7',green:'#158A5A',amber:'#B57611',teal:'#0E7490',purple:'#6C4FB6',mute:'#5B6472',line:'#E2E7EE'};
-const ch={};const STORE=(P.mode==='store');let OVMODE='table',OVMETRIC='cars',SEL=(P.rows[0]||{}).id,PICKREG=null;
+const ch={};const STORE=(P.mode==='store');let OVMODE='table',OVMETRIC='cars',SEL=(P.rows[0]||{}).id,PICKREG=null,KPIWK=null;
 const ICON={overview:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
  detail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>',
  hist:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>'};
@@ -251,12 +251,13 @@ function overview(){const k=P.kpis||{};
  document.getElementById('v_overview').innerHTML=`
   <div class="pills">${['All'].concat(Object.keys(P.regions||{})).map((r,i)=>`<button class="${i===0?'on':''}" onclick="regfilter(this,'${r}')">${r==='All'?('All · '+P.rows.length):r}</button>`).join('')}</div>
   <div class="kpis">
-   <div class="kpi" title="Stores currently reporting data in this scope"><div class="l">Stores reporting</div><div class="v">${k.stores||P.rows.length}</div><div class="d">live</div></div>
-   <div class="kpi ${k.carsPace>=0?'sg':'sr'}" title="Total cars so far across the scope · ${pc(k.carsPace)} vs the cars-weighted 4-week average"><div class="l">Total cars</div><div class="v">${k.cars!=null?Math.round(k.cars):'—'}</div><div class="d ${k.carsPace>=0?'pos':'neg'}">${pc(k.carsPace)} vs 4-wk</div></div>
-   <div class="kpi" title="Total net sales so far across the scope"><div class="l">Total net</div><div class="v">${k.net!=null?fmt.net(k.net):'—'}</div><div class="d">so far</div></div>
+   <div class="kpi ${(k.reporting!=null&&k.total!=null)?(k.reporting>=k.total?'sg':'sr'):''}" title="Stores currently reporting live data · ${k.reporting!=null?k.reporting:'?'} of ${k.total!=null?k.total:'?'} in this scope"><div class="l">Stores reporting</div><div class="v">${k.reporting!=null?k.reporting:(k.stores||P.rows.length)}</div><div class="d">${k.total!=null?('of '+k.total):'live'}</div></div>
+   <div class="kpi clickable ${k.carsPace>=0?'sg':'sr'}" onclick="togKpiWk('cars')" title="Total cars so far across the scope · ${pc(k.carsPace)} vs the 4-week average. Click for the last 4 same-weekdays by this hour + today."><div class="l">Total cars <span class="chev">▾</span></div><div class="v">${k.cars!=null?Math.round(k.cars):'—'}</div><div class="d ${k.carsPace>=0?'pos':'neg'}">${pc(k.carsPace)} vs 4-wk</div></div>
+   <div class="kpi clickable ${k.netPace!=null?(k.netPace>=0?'sg':'sr'):''}" onclick="togKpiWk('net')" title="Total net sales so far across the scope · ${pc(k.netPace)} vs the 4-week average. Click for the last 4 same-weekdays by this hour + today."><div class="l">Total net <span class="chev">▾</span></div><div class="v">${k.net!=null?fmt.net(k.net):'—'}</div><div class="d ${k.netPace!=null?(k.netPace>=0?'pos':'neg'):''}">${k.netPace!=null?pc(k.netPace)+' vs 4-wk':'so far'}</div></div>
    <div class="kpi ${k.aro>=125?'sg':'sr'}" title="Cars-weighted average ARO (total net ÷ total cars) vs the $125 target"><div class="l">Avg ARO</div><div class="v">${k.aro!=null?fmt.aro(k.aro):'—'}</div><div class="d ${k.aro>=125?'pos':'neg'}">vs $125</div></div>
    <div class="kpi ${k.big4==null?'':(k.big4>=53?'sg':(k.big4>=32?'sa':'sr'))}" title="Cars-weighted Big 4 attach % across the scope vs the 53% goal"><div class="l">Big 4 attach</div><div class="v">${k.big4!=null?fmt.big4(k.big4):'—'}</div><div class="d ${k.big4==null?'':(k.big4>=53?'pos':(k.big4>=32?'amb':'neg'))}">goal 53%</div></div>
   </div>
+  <div id="kpiwkbox" class="panel" style="display:none"><div id="kpiwkTitle" style="font-weight:800;font-size:.85rem;margin-bottom:6px;color:var(--navy)"></div><div class="chartbox sm"><canvas id="c_kpiwk"></canvas></div></div>
   <div class="row" style="margin-top:16px">
    <div class="seg"><button onclick="ovv(this,'rank')">Store ranking</button><button onclick="ovv(this,'graph')">Graphs</button><button class="on" onclick="ovv(this,'table')">Table</button></div>
    <div class="seg" id="ovm" style="display:none">${['cars','big4','aro','net','lhpc'].map((m,i)=>`<button class="${i===0?'on':''}" onclick="ovmet(this,'${m}')">${m==='aro'?'ARO':m==='lhpc'?'LHPC':m==='big4'?'Big 4':m[0].toUpperCase()+m.slice(1)}</button>`).join('')}</div>
@@ -270,7 +271,37 @@ function overview(){const k=P.kpis||{};
  ovBody();b4store();renderHeat();
 }
 let REGION='All';
-function regfilter(b,r){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');REGION=r;ovBody();b4store();renderHeat();}
+function regfilter(b,r){b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');REGION=r;ovBody();b4store();renderHeat();if(KPIWK)drawKpiWk(KPIWK);}
+// H4: Total cars / Total net click-to-expand — fleet totals for the last 4 same-weekdays
+// by this hour + today. Aggregated per the current region filter.
+function togKpiWk(key){const box=document.getElementById('kpiwkbox');if(!box)return;
+ if(KPIWK===key){box.style.display='none';KPIWK=null;return;}
+ KPIWK=key;box.style.display='block';
+ const t=document.getElementById('kpiwkTitle');
+ if(t)t.textContent=(key==='cars'?'Total cars':'Total net')+' — last 4 same-weekdays by this hour + today';
+ drawKpiWk(key);fitLater();}
+function kpiWkData(key){const R=rowsF();
+ const fd=d=>{d=String(d||'');return d.length>=10?(d.slice(5,7)+'/'+d.slice(8,10)):d;};
+ const today=R.reduce((a,s)=>a+(+s[key]||0),0);
+ if(REGION==='All'&&P.kpiWk&&P.kpiWk[key]){const arr=P.kpiWk[key]||[];
+  return {labels:arr.map(x=>fd(x.date)),vals:arr.map(x=>+x.val||0),today:today};}
+ const byd={};R.forEach(s=>{const d=(P.detail||{})[s.id];const wk=d&&d[key]&&d[key].wk;
+  if(wk)wk.forEach(x=>{if(x&&x.date!=null)byd[x.date]=(byd[x.date]||0)+(+x.val||0);});});
+ const dates=Object.keys(byd).sort();
+ return {labels:dates.map(fd),vals:dates.map(d=>byd[d]),today:today};}
+function drawKpiWk(key){const D=kpiWkData(key);
+ const labels=D.labels.concat(['Today']);const vals=D.vals.concat([D.today]);
+ const hv=D.vals;const avg=hv.length?hv.reduce((a,b)=>a+b,0)/hv.length:0;
+ const lab=v=>key==='net'?'$'+Math.round(v).toLocaleString():Math.round(v);
+ const plug={id:'kw',afterDatasetsDraw:c=>{const{ctx}=c;const meta=c.getDatasetMeta(0).data;ctx.save();
+   ctx.font='700 10px -apple-system,sans-serif';ctx.fillStyle='#0F172A';ctx.textAlign='center';
+   meta.forEach((bar,i)=>{if(vals[i]!=null)ctx.fillText(lab(vals[i]),bar.x,bar.y-4);});
+   if(hv.length){const y=c.scales.y.getPixelForValue(avg);const x0=meta[0].x-16,x1=meta[hv.length-1].x+16;
+     ctx.strokeStyle='#14273F';ctx.setLineDash([5,4]);ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+     ctx.setLineDash([]);ctx.fillStyle='#14273F';ctx.textAlign='left';ctx.fillText('avg '+lab(avg),x1+3,y-2);}
+   ctx.restore();}};
+ mk('c_kpiwk',{type:'bar',data:{labels:labels,datasets:[{data:vals,backgroundColor:labels.map((_,i)=>i===labels.length-1?C.blue:'#B5D4F4'),borderRadius:3}]},
+  options:{...G,layout:{padding:{top:16,right:48}},plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{display:false,beginAtZero:true}}},plugins:[plug]});}
 function renderHeat(){const el=document.getElementById('ov_heat');if(el)el.innerHTML=heatmap();}
 function heatmap(){const R=rowsF().filter(s=>s.heat&&s.heat.length);const hh=P.heatHours||[];
  if(!R.length||!hh.length)return '<div class="empty">No heat data.</div>';
@@ -288,7 +319,7 @@ function ovBody(){const el=document.getElementById('ov_body');const R=rowsF();
  if(OVMODE==='rank'){el.innerHTML='<div class="cards">'+R.map(s=>`
    <div class="scard" onclick="openStore('${s.id}')" title="${s.name} #${s.id} · cars ${s.cars??'—'} · net ${s.net!=null?'$'+Math.round(s.net).toLocaleString():'—'} · ARO ${s.aro!=null?'$'+Math.round(s.aro):'—'} · Big 4 ${s.big4!=null?Math.round(s.big4)+'%':'—'} · LHPC ${s.lhpc??'—'} · ${pc(s.pace)} vs 4-wk. Click to open."><div class="top"><div><div class="nm">${s.name}</div><div class="id">#${s.id}</div></div><span class="pill ${s.status||'a'}">${pc(s.pace)}</span></div>
    <div class="mini"><div><div class="ml">Cars</div><div class="mv">${s.cars!=null?s.cars:'—'}</div></div><div><div class="ml">ARO</div><div class="mv">${s.aro!=null?'$'+Math.round(s.aro):'—'}</div></div><div><div class="ml">Big 4</div><div class="mv">${s.big4!=null?Math.round(s.big4)+'%':'—'}</div></div><div><div class="ml">LHPC</div><div class="mv">${s.lhpc!=null?(+s.lhpc).toFixed(2):'—'}</div></div></div></div>`).join('')+'</div>';}
- else if(OVMODE==='table'){el.innerHTML='<table><thead><tr><th>Store</th><th>Cars</th><th>Net</th><th>ARO</th><th>Big 4</th><th>LHPC</th><th>vs 4-wk</th></tr></thead><tbody>'+R.map(s=>`<tr onclick="openStore('${s.id}')"><td>${s.name} #${s.id}</td><td>${s.cars??'—'}</td><td>${s.net!=null?'$'+Math.round(s.net).toLocaleString():'—'}</td><td>${s.aro!=null?'$'+Math.round(s.aro):'—'}</td><td>${s.big4!=null?Math.round(s.big4)+'%':'—'}</td><td>${s.lhpc!=null?(+s.lhpc).toFixed(2):'—'}</td><td class="${scls(s.status)}">${pc(s.pace)}</td></tr>`).join('')+'</tbody></table>';}
+ else if(OVMODE==='table'){const wd=(P.date||'').split(',')[0]||'this weekday';const tvs='cars so far vs a normal '+wd+' by this hour';el.innerHTML='<table><thead><tr><th>Store</th><th>Cars</th><th>Net</th><th>ARO</th><th>Big 4</th><th>LHPC</th><th title="'+tvs+'">Cars vs 4-wk</th></tr></thead><tbody>'+R.map(s=>`<tr onclick="openStore('${s.id}')"><td>${s.name} #${s.id}</td><td>${s.cars??'—'}</td><td>${s.net!=null?'$'+Math.round(s.net).toLocaleString():'—'}</td><td>${s.aro!=null?'$'+Math.round(s.aro):'—'}</td><td>${s.big4!=null?Math.round(s.big4)+'%':'—'}</td><td>${s.lhpc!=null?(+s.lhpc).toFixed(2):'—'}</td><td class="${scls(s.status)}" title="${tvs}">${pc(s.pace)}</td></tr>`).join('')+'</tbody></table>';}
  else{el.innerHTML='<div class="panel"><div class="chartbox tall"><canvas id="c_fleet"></canvas></div></div>';fleet();}
  fitLater();
 }
@@ -394,7 +425,7 @@ function moversSection(d){const mv=d.movers||[];
  const how=`<div class="card2"><div class="sh2">How to read this</div><div class="expl2">
    <div class="pbox"><div class="h2">4-Week Comparison</div>Today so far vs a <b>normal ${wd}</b> — the simple average of the last 4 same-weekdays at this same time. <b>+%</b> ahead, <b>−%</b> behind.</div>
    <div class="pbox"><div class="h2">Projected</div>Where the day is trending by close: <b>today's banked total</b> plus the rest of a typical day, nudged by how today is pacing. An estimate, not a promise.</div>
-   <div class="pbox"><div class="h2">Target</div>The projected finish vs an <b>end-of-day goal</b>. Cars &amp; Net targets are the 4-week average nudged by a set boost %; ARO, Big 4 and LHPC are fixed goals. <b>+</b> ahead, <b>−</b> behind.</div></div></div>`;
+   <div class="pbox"><div class="h2">Target</div>The <b>end-of-day goal</b> to aim for — where you want the day to land. <b>+</b> ahead of target, <b>−</b> behind.</div></div></div>`;
  return `<div class="row2">${mov}${how}</div>`;
 }
 function aroSection(d){const a=d.aro;
@@ -414,8 +445,18 @@ function buildBullets(items){items=items||[];const vals=items.flatMap(it=>[it.at
  return items.map((it,i)=>{const r=it.target?it.attach/it.target:0,sc=r>=1?C.green:(r>=.6?C.amber:C.red);
   return `<div class="bullet" title="${it.name}: ${Math.round(it.attach)}% attach vs ${it.target}% target · ${it.units||0} units"><span class="bn">${it.name}</span><div class="track"><span class="fill" style="width:${pos(it.attach)}%;background:${IC[i%4]}"></span><span class="tmark" style="left:${pos(it.target)}%"></span></div><span class="bv" style="color:${sc}">${Math.round(it.attach)}% / ${it.target}%</span></div>`;}).join('');}
 function lhpcSection(d){const l=d.lhpc;
+ // H1: "How rolling is figured" — total hours ÷ cars = rolling, with the live amounts.
+ const th=(l.totHours!=null)?(+l.totHours).toFixed(1):'—';
+ const tcars=(l.totCars!=null)?Math.round(l.totCars):'—';
+ const mathBox=`<div class="box" title="How the rolling LHPC is figured: labor hours so far today ÷ cars so far today = the rolling LHPC."><div class="bl">How rolling is figured</div>
+   <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:end;text-align:center;gap:4px;margin-top:6px">
+    <div><div class="big">${th}</div><div class="cap">total hours</div></div>
+    <div style="font-size:.95rem;font-weight:800;color:var(--mute);padding-bottom:9px">÷</div>
+    <div><div class="big">${tcars}</div><div class="cap">cars</div></div>
+    <div style="font-size:.95rem;font-weight:800;color:var(--mute);padding-bottom:9px">=</div>
+    <div><div class="big" style="color:${C.purple}">${(+l.day).toFixed(2)}</div><div class="cap">rolling</div></div></div></div>`;
  return `<div class="panel"><div class="mhead"><div class="acc" style="background:${C.purple}"></div><span class="t">Labor · LHPC</span><span class="n">rolling labor per car vs target</span></div>
-  <div class="mrow"><div class="boxes"><div class="box clickable" onclick="tog('lhx')" title="Rolling ${(+l.day).toFixed(2)} = cumulative labor hours ÷ cumulative cars for the day · variance ${l.variance>0?'+':''}${(+l.variance).toFixed(2)} vs the ${(+l.target).toFixed(2)} target. Lower is leaner."><div class="bl">Rolling <span class="chev">▾</span></div><div class="triple"><div><div class="big">${(+l.day).toFixed(2)}</div><div class="cap">rolling</div></div><div><div class="mid ${l.variance<=0?'pos':'neg'}">${l.variance>0?'+':''}${(+l.variance).toFixed(2)}</div><div class="cap">variance</div></div><div><div class="big">${(+l.target).toFixed(2)}</div><div class="cap">target</div></div></div><div class="expand" id="lhx"><div class="sub">Rolling = cumulative labor hours ÷ cumulative cars for the day. Lower is leaner.</div></div></div></div>
+  <div class="mrow"><div class="boxes"><div class="box clickable" onclick="tog('lhx')" title="Rolling ${(+l.day).toFixed(2)} = cumulative labor hours ÷ cumulative cars for the day · variance ${l.variance>0?'+':''}${(+l.variance).toFixed(2)} vs the ${(+l.target).toFixed(2)} target. Lower is leaner."><div class="bl">Rolling <span class="chev">▾</span></div><div class="triple"><div><div class="big">${(+l.day).toFixed(2)}</div><div class="cap">rolling</div></div><div><div class="mid ${l.variance<=0?'pos':'neg'}">${l.variance>0?'+':''}${(+l.variance).toFixed(2)}</div><div class="cap">variance</div></div><div><div class="big">${(+l.target).toFixed(2)}</div><div class="cap">target</div></div></div><div class="expand" id="lhx"><div class="sub">Rolling = cumulative labor hours ÷ cumulative cars for the day. Lower is leaner.</div></div></div>${mathBox}</div>
    <div>${band()}<div class="chartbox" style="height:196px"><canvas id="c_lhpc"></canvas></div></div></div></div>`;
 }
 function opsSection(d){const ops=d.ops||[];if(!ops.length)return '';

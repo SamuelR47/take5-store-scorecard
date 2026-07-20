@@ -193,8 +193,34 @@ def big4_series(today_rows,hours,now_hour,latest):
     return {"run":run,"pct":round(ba["pct"],1) if ba["pct"] is not None else None,
             "target":BIG4_GOAL,"units":ba["units"],"items":items}
 
+def _labor_cum_guard(today_rows):
+    """H1: cumulative labor-hours by hour with pre-open/outlier readings dropped.
+    A labor reading is invalid if its pull has cars==0 (pre-open — the scraper emits a
+    garbage labor total then, e.g. 11,660 hrs) OR the value exceeds the day's final/max
+    sane cumulative (cumulative labor can only rise to the end-of-day total, so a reading
+    larger than the eventual total is a bad/stale scrape). Dropping these BEFORE
+    differencing keeps the per-hour hours bar sane; the rolling LHPC (which already skips
+    cars==0 hours) is unchanged."""
+    pairs=[]  # (hour, labor, cars) in pull order
+    for r in sorted(today_rows,key=lambda x:x.get("pull_time") or ""):
+        h=row_hour(r)
+        if h is None: continue
+        lv=get_metric(r,"labor_hours")
+        if lv is None: continue
+        try: cv=int(r.get("cars") or 0)
+        except (TypeError,ValueError): cv=0
+        pairs.append((h,float(lv),cv))
+    sane=[lv for _,lv,cv in pairs if cv]      # readings on pulls that have cars
+    cap=sane[-1] if sane else None            # end-of-day total = last sane cumulative
+    out={}
+    for h,lv,cv in pairs:
+        if cv==0: continue                    # pre-open reading
+        if cap is not None and lv>cap+1e-9: continue  # outlier above the day total
+        out[h]=lv
+    return out
+
 def lhpc_series(today_rows,hours,now_hour):
-    lcum=cum_by_hour(today_rows,"labor_hours"); ccum=cum_by_hour(today_rows,"cars")
+    lcum=_labor_cum_guard(today_rows); ccum=cum_by_hour(today_rows,"cars")
     lpp=to_per_period(lcum); cpp=to_per_period(ccum)
     hoursarr=[]; roll=[]; lc=0.0; ll=0.0
     for h in hours:
@@ -207,7 +233,11 @@ def lhpc_series(today_rows,hours,now_hour):
     for h in sorted(cpp):
         if h<=now_hour and cpp[h] and h in lpp: now=round(lpp[h]/cpp[h],2)
     day=round(lcum[max(lcum)]/ccum[max(ccum)],2) if (lcum and ccum and ccum[max(ccum)]) else None
-    return {"hours":hoursarr,"roll":roll,"now":now,"day":day,"target":LHPC_TARGET}
+    # H1: as-of-now cumulative totals for the "rolling math" box (totHours ÷ totCars = day).
+    tot_hours=round(lcum[max(lcum)],1) if lcum else None
+    tot_cars=ccum[max(ccum)] if ccum else None
+    return {"hours":hoursarr,"roll":roll,"now":now,"day":day,"target":LHPC_TARGET,
+            "totHours":tot_hours,"totCars":tot_cars}
 
 # ---------- dynamic "what's driving value" ----------
 def fmt_pct(v):

@@ -119,16 +119,20 @@ def login_view():
 def _pace(v):
     return "—" if v is None else (("+" if v >= 0 else "") + f"{v:g}%")
 
-def _cards_today(sp):
+def _cards_today(sp, task_pct=None):
+    # H2: printable Today card mirrors the on-screen KPI strip — Cars, ARO, Net, Big 4,
+    # LHPC, Task — with the same formatting, deltas and red/green status coloring.
     def rgb(k): return _hex(RGB.get(sp["status"].get(k, "flat"), NAVY))
-    d = sp["diff"]
+    def task_rgb(p):  # mirrors the dashboard Task KPI (green >=80, amber >=50, red else)
+        if p is None: return _hex(NAVY)
+        return _hex(GREEN) if p >= 80 else (_hex(AMBER) if p >= 50 else _hex(RED))
     return [
         ("Cars", f"{sp['cars']['sofar']:,.0f}", _pace(sp["cars"]["pace_pct"]) + " vs 4-wk", rgb("cars")),
         ("ARO", f"${sp['aro']['sofar']:,.2f}" if sp['aro']['sofar'] else "—", _pace(sp["aro"]["gap_pct"]) + " vs $125", rgb("aro")),
         ("Net revenue", f"${sp['net']['sofar']:,.0f}", _pace(sp["net"]["pace_pct"]) + " vs 4-wk", rgb("net")),
         ("Big 4 attach %", f"{sp['big4']['pct']:,.0f}%" if sp['big4']['pct'] is not None else "—", "goal 53%", rgb("big4")),
         ("LHPC", f"{sp['lhpc']['day']:.2f}" if sp['lhpc']['day'] else "—", "target 1.10", rgb("lhpc")),
-        ("Differentials", f"{d['units']}", f"${d['amount']:,.0f} · {(d.get('pct') or 0):.0f}% of cars", _hex(PURPLE)),
+        ("Task", f"{task_pct:.0f}%" if task_pct is not None else "—", "done today", task_rgb(task_pct)),
     ]
 
 def _cards_day(s):
@@ -308,7 +312,9 @@ def _web_detail(sp):
             "big4": {"run": b["run"], "pct": b.get("pct") or 0, "units": b.get("units") or 0,
                      "target": b.get("target"), "items": b.get("items", [])},
             "lhpc": {"roll": l["roll"], "hours": l["hours"], "day": l.get("day") or 0,
-                     "now": l.get("now"), "target": l.get("target"), "variance": l.get("variance")},
+                     "now": l.get("now"), "target": l.get("target"), "variance": l.get("variance"),
+                     # H1: as-of-now cumulative totals for the "rolling math" box
+                     "totHours": l.get("totHours"), "totCars": l.get("totCars")},
             "drivers": a.get("drivers", []), "movers": sp.get("drivers", []),
             "ops": sp.get("ops", [])}
 
@@ -343,16 +349,23 @@ def build_web_payload(tier, allowed, scope_label, stamp):
             print(f"[web] store {s}: {type(e).__name__}: {e}"); continue
         rows.append({"id": s, "name": CITY[s], "region": region_of(s), "cars": ar["cars"],
                      "net": ar["net"], "aro": ar["aro"], "lhpc": ar["lhpc"], "big4": ar["big4"],
-                     "pace": ar["pace"], "status": calc.st_pace(ar["pace"]), "heat": ar.get("heat")})
+                     "pace": ar["pace"], "status": calc.st_pace(ar["pace"]), "heat": ar.get("heat"),
+                     # H4: per-store net pace so the overview can aggregate a Total-net vs-4wk %
+                     "netPace": sp["net"].get("pace_pct")})
         d = _web_detail(sp)
         d["messages"] = [{"from": m.get("from_user"), "body": m.get("body"),
                           "when": (m.get("sent_at") or "")[:16].replace("T", " ")}
                          for m in datastore.get_inbox("store", s)]
         # V3 score cards reused: today built fresh, yesterday+week from the hourly cache
         # (~9 KB/store base64 -> ~0.13 MB for all 15, measured; safe to embed, cf. review M6).
+        # H2: today's task-completion % for the printable card's Task tile — same source as
+        # the dashboard Task KPI (TASKS_BY_DOW for today's weekday x datastore completions).
+        _tl_today = TASKS_BY_DOW.get(now.weekday(), [])
+        _dc_today = (comp_by_date.get(today) or {}).get(s, {})
+        _task_pct = round(len([t for t in _tl_today if t in _dc_today]) / len(_tl_today) * 100) if _tl_today else 0
         try:
             tb = base64.b64encode(scorecard_pdf.build_scorecard_pdf(
-                sp["name"], s, sp["date"], sp["asof"], _cards_today(sp))).decode()
+                sp["name"], s, sp["date"], sp["asof"], _cards_today(sp, _task_pct))).decode()
         except Exception as e:
             print(f"[web scorecard today] {s}: {type(e).__name__}: {e}"); tb = ""
         md = _multiday_b64(s, stamp[:13])
@@ -384,8 +397,24 @@ def build_web_payload(tier, allowed, scope_label, stamp):
     b4R = [r for r in liveR if r["big4"] is not None and r["cars"]]
     b4 = (sum(r["big4"] * r["cars"] for r in b4R) / sum(r["cars"] for r in b4R)) if b4R else None
     paced = [r["pace"] for r in liveR if r["pace"] is not None]
+    netPaced = [r["netPace"] for r in liveR if r.get("netPace") is not None]
     kpis = {"stores": len(rows), "cars": tc, "carsPace": round(sum(paced) / len(paced), 1) if paced else None,
-            "net": tn, "aro": round(tn / tc, 1) if tc else None, "big4": round(b4, 1) if b4 is not None else None}
+            "net": tn, "aro": round(tn / tc, 1) if tc else None, "big4": round(b4, 1) if b4 is not None else None,
+            # H4: Total-net vs-4wk % (avg of per-store net pace, mirrors carsPace) + reporting count
+            "netPace": round(sum(netPaced) / len(netPaced), 1) if netPaced else None,
+            "reporting": len(liveR), "total": len(rows)}
+    # H4: fleet 4-week drill-in — sum each store's same-weekday by-this-hour value by date
+    # (respects the current scope; the JS re-aggregates per region from per-store detail wk).
+    def _aggwk(kk):
+        byd = {}
+        for s in detail:
+            for x in (detail[s][kk].get("wk") or []):
+                dd = x.get("date")
+                if dd is None:
+                    continue
+                byd[dd] = byd.get(dd, 0) + (x.get("val") or 0)
+        return [{"date": d, "val": round(byd[d])} for d in sorted(byd)]
+    kpiWk = {"cars": _aggwk("cars"), "net": _aggwk("net")}
     sourced = ""
     stale = False
     stale_min = None
@@ -408,7 +437,7 @@ def build_web_payload(tier, allowed, scope_label, stamp):
             "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
             "date": now.strftime("%A, %b %-d %Y"),
             "sourced": sourced, "stale": stale, "staleMin": stale_min, "closed": closed,
-            "kpis": kpis, "regions": regions, "rows": rows, "detail": detail,
+            "kpis": kpis, "kpiWk": kpiWk, "regions": regions, "rows": rows, "detail": detail,
             "heatHours": heat_hours,
             "hist": {"days": labels, "today": "Today", "stores": hstores, "metric": "cars"}}
 
