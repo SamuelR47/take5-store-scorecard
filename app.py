@@ -431,8 +431,7 @@ def build_web_payload(tier, allowed, scope_label, stamp):
     # D4: closed = current Central time is past the store's close hour. HOURS is keyed by
     # weekday as (open, close); close hour is the same across all stores in a scope.
     closed = now.hour >= c
-    heat_hours = (["Before " + calc.hour_label(o)] + [calc.hour_label(h) for h in range(o, c + 1)]
-                  + ["After " + calc.hour_label(c)])
+    heat_hours = [calc.hour_label(h) for h in range(o, c + 1)]
     return {"tier": tier, "mode": "store" if tier == "store" else "full",
             "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
             "date": now.strftime("%A, %b %-d %Y"),

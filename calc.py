@@ -347,7 +347,7 @@ def build_admin_row(store, city, today_rows, hist, now):
     weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1)); now_hour=min(max(now.hour,o),c)
     if not today_rows:
         return {"id":store,"name":city,"open":"—","cars":None,"net":None,"aro":None,"lhpc":None,
-                "big4":None,"diff":0,"diff_pct":None,"pace":None,"heat":[None]*(len(hours)+2),"breakdown":{}}
+                "big4":None,"diff":0,"diff_pct":None,"pace":None,"heat":[None]*len(hours),"breakdown":{}}
     latest=today_rows[-1]; td=row_date(latest)
     cm=count_metric(today_rows,hist,hours,weekday,now_hour,"cars",td)
     cars=latest.get("cars") or 0; net=latest.get("net_sales") or 0
@@ -355,10 +355,14 @@ def build_admin_row(store, city, today_rows, hist, now):
     dpct=round(dd["units"]/cars*100,1) if cars else None
     lh=lhpc_series(today_rows,hours,now_hour)
     cpp=to_per_period(cum_by_hour(today_rows,"cars"))
-    # Heat map with roll-up buckets: everything before the open hour and after the
-    # close hour is summed into its own bucket so early/late cars aren't hidden.
+    # Heat map: fold any pre-open cars into the OPENING-hour cell and any post-close cars
+    # into the CLOSING-hour cell (there is effectively no traffic outside store hours), so
+    # there are no separate Before/After rows -- the first/last hour absorbs them.
     before=sum(v for h,v in cpp.items() if h<o); after=sum(v for h,v in cpp.items() if h>c)
-    heat=[before if before else None]+[cpp.get(h) for h in hours]+[after if after else None]
+    heat=[cpp.get(h) for h in hours]
+    if heat:
+        if before: heat[0]=(heat[0] or 0)+before
+        if after:  heat[-1]=(heat[-1] or 0)+after
     # V3 (fixes review M1): admin "Big 4" is the overall attach % (units/cars), same as
     # the store view, vs the 53% goal -- differentials are NO LONGER folded into the
     # numerator (that was the >100% bug). Differentials reported separately.
