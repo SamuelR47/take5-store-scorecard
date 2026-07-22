@@ -24,6 +24,18 @@ DISTRICTS = {"1111":("DM South",["1503","1504","1505","1509","1517"]),
 HOURS = {0:(6,20),1:(6,20),2:(6,20),3:(6,20),4:(6,20),5:(6,18),6:(9,17)}  # Mon-Fri 6a-8p, Sat 6a-6p, Sun 9a-5p
 DOW = {0:"Mon",1:"Tues",2:"Wed",3:"Thurs",4:"Fri",5:"Sat",6:"Sun"}
 DOW_FULL = {0:"Monday",1:"Tuesday",2:"Wednesday",3:"Thursday",4:"Friday",5:"Saturday",6:"Sunday"}
+# V4 (C): daily task checklist, per weekday (Mon=0). Extracted from
+# 'Daily Task/Weekly schedule planner1 - Copy.xlsx' (the Excel is the source of truth;
+# it isn't deployed, so the list is baked in here — update here if the planner changes).
+TASKS_BY_DOW = {
+  0: ['Teams Post (4 pictures)','Inventory count','Morning Huddle','Opening checklist','PD NONOC check','3 Email/phone NPS','Place Truck order','Check Applicants','Update Spiff Report','Check Cashlog','Verify closing CL','Depth Chart update','Scan invoices','Time card Review','Bank Run'],
+  1: ['Teams Post (4 pictures)','Inventory count','Morning Huddle','Opening checklist','PD NONOC check','3 Email/phone NPS','Check Applicants','Update Spiff Report','Check Cashlog','Verify closing CL','Depth Chart update','Scan invoices','Time card Review'],
+  2: ['Teams Post (4 pictures)','Inventory count','Morning Huddle','Opening checklist','PD NONOC check','3 Email/phone NPS','Check Applicants','Update Spiff Report','Check Cashlog','Verify closing CL','Depth Chart update','Scan invoices','Time card Review','Survey tracker'],
+  3: ['Teams Post (4 pictures)','Inventory count','Morning Huddle','Opening checklist','PD NONOC check','3 Email/phone NPS','Check Applicants','Update Spiff Report','Check Cashlog','Verify closing CL','Depth Chart update','Scan invoices','Time card Review','Tech review','Weekly focus Update'],
+  4: ['Teams Post (4 pictures)','Inventory count','Morning Huddle','Opening checklist','PD NONOC check','3 Email/phone NPS','Check Applicants','Update Spiff Report','Check Cashlog','Verify closing CL','Depth Chart update','Scan invoices','Time card Review','Bank Run'],
+  5: ['Teams Post (4 pictures)','Inventory count','Morning Huddle','Opening checklist','PD NONOC check','3 Email/phone NPS','Check Applicants','Update Spiff Report','Check Cashlog','Verify closing CL','Depth Chart update','Scan invoices','Time card Review','Schedule complete'],
+  6: ['Teams Post (4 pictures)','Inventory count','Morning Huddle','Opening checklist','PD NONOC check','3 Email/phone NPS','Check Applicants','Update Spiff Report','Check Cashlog','Verify closing CL','Depth Chart update','Scan invoices','Time card Review'],
+}
 HIST_DAYS = 400                       # wide: section-9 picks the recent 4 same-weekdays.
 # NOTE (V3): the seeded baseline is ~1yr old summer data, so this window MUST stay
 # wide or the norms go empty. The review's "45-day cap" would delete the baseline;

@@ -3,25 +3,28 @@ per-tier payload -> one embedded HTML/Chart.js dashboard. Three tiers:
 store (own store), DM/AM (their region's stores), admin (all 15).
 
 V3 shell:
-- Professional centered login; phone/desktop toggle (?view=phone) with compact mobile
-  controls; data-source health banner (H5).
+- Professional centered login; a single desktop layout for all devices (the separate
+  mobile view was removed); data-source health banner (H5).
 - Score cards are embedded in the dashboard itself (Today from live data + Yesterday and
   Last-7-days from an hourly cache) and rendered as a section inside the store view.
 - User guide opens in a modal as page IMAGES (reliable on every device, unlike a PDF
   data-URI) with a download fallback.
 """
-import base64, os, datetime as dt
+import base64, os, html, datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 import streamlit as st
 import streamlit.components.v1 as components
 
 from config import (BRAND, CENTRAL, STORE_CODES, CITY, REGIONS, DISTRICTS,
-                    HOURS, NAVY, GREEN, RED, AMBER, PURPLE, SCORECARD_DAYS)
-import calc, dashboard, scorecard_pdf
+                    HOURS, NAVY, GREEN, RED, AMBER, PURPLE, MUTE, SCORECARD_DAYS,
+                    ARO_TARGET, LHPC_TARGET, BIG4_GOAL)
+import calc, dashboard, scorecard_pdf, identity, datastore, web
 from datasource import fetch_today, fetch_history, fetch_days, healthcheck
+from config import BIG4_TARGETS, DOW_FULL, TASKS_BY_DOW
 
+_sb_state = "expanded" if (st.session_state.get("auth") or (None,))[0] == "admin" else "collapsed"
 st.set_page_config(page_title=f"{BRAND} - Take 5 Scorecard", layout="wide",
-                   initial_sidebar_state="collapsed")
+                   initial_sidebar_state=_sb_state)
 st.markdown("""<style>
  .block-container{padding:1rem 1rem 0;max-width:100%;}
  #MainMenu,footer{visibility:hidden;}
@@ -36,11 +39,24 @@ st.markdown("""<style>
 RGB = {"g": GREEN, "r": RED, "a": AMBER, "flat": NAVY}
 def _hex(h): h=h.lstrip("#"); return tuple(int(h[i:i+2],16) for i in (0,2,4))
 
+def _fmt_sent(ts):
+    """Message timestamps come back from Supabase in UTC. Show them in Central, am/pm."""
+    if not ts:
+        return ""
+    try:
+        t = dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=dt.timezone.utc)
+        return t.astimezone(CENTRAL).strftime("%b %-d · %-I:%M %p")
+    except Exception:
+        return str(ts)[:16].replace("T", " ")
+
+
 def _guide_path():
     here = os.path.dirname(os.path.abspath(__file__))
-    for p in (os.path.join(here, "Store_Level_Dashboard_Guide_V3.pdf"),
-              os.path.join(os.getcwd(), "Store_Level_Dashboard_Guide_V3.pdf"),
-              "Store_Level_Dashboard_Guide_V3.pdf"):
+    for p in (os.path.join(here, "Store_Level_Dashboard_Guide_V4.pdf"),
+              os.path.join(os.getcwd(), "Store_Level_Dashboard_Guide_V4.pdf"),
+              "Store_Level_Dashboard_Guide_V4.pdf"):
         if os.path.exists(p): return p
     return None
 
@@ -52,9 +68,37 @@ def region_of(store):
     return ""
 
 
+def _parse_ts(s):
+    """Parse a Supabase timestamptz string to an aware datetime, or None."""
+    if not s:
+        return None
+    try:
+        return dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 def is_mobile():
-    try: return st.query_params.get("view") == "phone"
-    except Exception: return False
+    # The separate mobile/stacked layout was removed: it was the source of a persistent overlap
+    # bug (native tasks/messages painting over the dashboard component). The desktop layout
+    # renders fine on phones (Streamlit auto-stacks columns on narrow screens), so there is now
+    # exactly ONE layout for everyone. This is kept as a stub (always False) so callers that
+    # still pass a `mobile` flag don't break, and any legacy ?view= param is inert.
+    return False
+
+
+def _picker(options, current, key, mobile):
+    """Segmented-control 'tabs' on desktop where available; compact selectbox on phone
+    or older Streamlit. Returns the selected option string."""
+    sc = getattr(st, "segmented_control", None)
+    if sc and not mobile:
+        try:
+            return sc("scope", options, default=current if current in options else options[0],
+                      key=key, label_visibility="collapsed")
+        except Exception:
+            pass
+    idx = options.index(current) if current in options else 0
+    return st.selectbox("scope", options, index=idx, key=key, label_visibility="collapsed")
 
 
 def login_view():
@@ -88,29 +132,34 @@ def login_view():
 def _pace(v):
     return "—" if v is None else (("+" if v >= 0 else "") + f"{v:g}%")
 
-def _cards_today(sp):
+def _cards_today(sp, task_pct=None):
+    # H2: printable Today card mirrors the on-screen KPI strip — Cars, ARO, Net, Big 4,
+    # LHPC, Task — with the same formatting, deltas and red/green status coloring.
     def rgb(k): return _hex(RGB.get(sp["status"].get(k, "flat"), NAVY))
-    d = sp["diff"]
+    def task_rgb(p):  # mirrors the dashboard Task KPI (green >=80, amber >=50, red else)
+        if p is None: return _hex(NAVY)
+        return _hex(GREEN) if p >= 80 else (_hex(AMBER) if p >= 50 else _hex(RED))
     return [
         ("Cars", f"{sp['cars']['sofar']:,.0f}", _pace(sp["cars"]["pace_pct"]) + " vs 4-wk", rgb("cars")),
         ("ARO", f"${sp['aro']['sofar']:,.2f}" if sp['aro']['sofar'] else "—", _pace(sp["aro"]["gap_pct"]) + " vs $125", rgb("aro")),
         ("Net revenue", f"${sp['net']['sofar']:,.0f}", _pace(sp["net"]["pace_pct"]) + " vs 4-wk", rgb("net")),
         ("Big 4 attach %", f"{sp['big4']['pct']:,.0f}%" if sp['big4']['pct'] is not None else "—", "goal 53%", rgb("big4")),
         ("LHPC", f"{sp['lhpc']['day']:.2f}" if sp['lhpc']['day'] else "—", "target 1.10", rgb("lhpc")),
-        ("Differentials", f"{d['units']}", f"${d['amount']:,.0f} · {(d.get('pct') or 0):.0f}% of cars", _hex(PURPLE)),
+        ("Task", f"{task_pct:.0f}%" if task_pct is not None else "—", "done today", task_rgb(task_pct)),
     ]
 
 def _cards_day(s):
     def aro_c(v): return _hex(GREEN) if v>=125 else (_hex(AMBER) if v>=117.5 else _hex(RED))
     def b4_c(v): return _hex(GREEN) if v>=53 else (_hex(AMBER) if v>=32 else _hex(RED))
     def lh_c(v): return _hex(GREEN) if v<=1.10 else (_hex(AMBER) if v<=1.25 else _hex(RED))
+    def task_c(v): return _hex(NAVY) if v is None else (_hex(GREEN) if v>=80 else (_hex(AMBER) if v>=50 else _hex(RED)))
     return [
         ("Cars", f"{s['cars']:,}" if s['cars'] is not None else "—", "full day", _hex(NAVY)),
         ("ARO", f"${s['aro']:,.2f}" if s['aro'] is not None else "—", "target $125", aro_c(s['aro']) if s['aro'] is not None else _hex(NAVY)),
         ("Net revenue", f"${s['net']:,.0f}" if s['net'] is not None else "—", "full day", _hex(GREEN)),
         ("Big 4 attach %", f"{s['big4']:.0f}%" if s['big4'] is not None else "—", "goal 53%", b4_c(s['big4']) if s['big4'] is not None else _hex(NAVY)),
         ("LHPC", f"{s['lhpc']:.2f}" if s['lhpc'] is not None else "—", "target 1.10", lh_c(s['lhpc']) if s['lhpc'] is not None else _hex(NAVY)),
-        ("Differentials", f"{s['diff']}", f"{(s['diff_pct'] or 0):.0f}% of cars", _hex(PURPLE)),
+        ("Task", f"{s['task']:.0f}%" if s.get('task') is not None else "—", "done", task_c(s.get('task'))),
     ]
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -124,6 +173,16 @@ def _multiday_b64(store, hourstamp):
     summ = calc.days_back_summaries(rows, SCORECARD_DAYS, today)
     if not summ:
         return out
+    # H2 (all cards): per-day task-completion % so Yesterday + Weekly mirror the dashboard's
+    # Task KPI (TASKS_BY_DOW for that day's weekday x that date's completions). Sparse for
+    # older days (feature is new) -> shows "-"/0%.
+    for _sd in summ:
+        try:
+            _wd = dt.date.fromisoformat(_sd["date"]).weekday(); _tl = TASKS_BY_DOW.get(_wd, [])
+            _dc = datastore.get_completions(_sd["date"]).get(store, {})
+            _sd["task"] = round(len([t for t in _tl if t in _dc]) / len(_tl) * 100) if _tl else None
+        except Exception:
+            _sd["task"] = None
     y = summ[0]
     try:
         d = dt.date.fromisoformat(y["date"]); ds = d.strftime("%A, %b %-d %Y"); out["ylabel"] = " (" + d.strftime("%b %-d") + ")"
@@ -149,6 +208,13 @@ def build_payload(tier, allowed, scope_label, stamp):
         return s, fetch_today(s), fetch_history(s)
     with ThreadPoolExecutor(max_workers=8) as ex:
         fetched = list(ex.map(_pull, allowed))
+    # F: newest pull_time across the in-scope stores = when the data was last sourced.
+    newest = None
+    for _s, td, _hist in fetched:
+        for r in td:
+            ts = _parse_ts(r.get("pull_time"))
+            if ts and (newest is None or ts > newest):
+                newest = ts
     stores, rows, ok = {}, {}, []
     for s, td, hist in fetched:
         try:
@@ -170,10 +236,16 @@ def build_payload(tier, allowed, scope_label, stamp):
             print(f"[scorecard] today {s}: {type(e).__name__}: {e}"); today_b64 = ""
         md = _multiday_b64(s, hourstamp)
         pdf[s] = {"today": today_b64, "yesterday": md["yesterday"], "week": md["week"], "ylabel": md["ylabel"]}
+    # Admin nav shows only regions that actually have in-scope stores, so a region-scoped
+    # admin view (V4 scope tabs) doesn't list empty regions in the in-component nav.
+    regions = ({r: [s for s in ids if s in allowed]
+                for r, ids in REGIONS.items() if any(s in allowed for s in ids)}
+               if tier == "admin" else {})
     return {"tier": tier, "scope_label": scope_label, "allowed": allowed,
-            "regions": REGIONS if tier == "admin" else {}, "stores": stores, "rows": rows,
+            "regions": regions, "stores": stores, "rows": rows,
             "hours": hours, "date": stores[allowed[0]]["date"] if allowed else "",
-            "asof": now.strftime("%-I:%M %p"), "pdf": pdf}
+            "asof": now.strftime("%-I:%M %p"), "pdf": pdf,
+            "sourced_epoch": newest.timestamp() if newest else None}
 
 
 # ---------------- user guide (rendered as images -> reliable everywhere) ----------------
@@ -196,7 +268,7 @@ def _guide_body():
         try:
             with open(path, "rb") as f:
                 st.download_button("⬇  Download the guide (PDF)", f.read(),
-                                   file_name="Store_Level_Dashboard_Guide.pdf",
+                                   file_name="Store_Level_Dashboard_Guide_V4.pdf",
                                    mime="application/pdf", use_container_width=True)
         except Exception:
             pass
@@ -206,7 +278,7 @@ def _guide_body():
             st.image(im, use_container_width=True)
     elif not path:
         st.info("The store guide file isn't in this deployment. Make sure "
-                "Store_Level_Dashboard_Guide_V3.pdf is uploaded alongside the app.")
+                "Store_Level_Dashboard_Guide_V4.pdf is uploaded alongside the app.")
     else:
         st.info("Couldn't render the guide inline here — use the download button above to open the PDF.")
 
@@ -225,57 +297,587 @@ else:
 _fragment = getattr(st, "fragment", None) or getattr(st, "experimental_fragment")
 
 
-@_fragment(run_every=1800)
-def _dashboard_view(tier, allowed, scope, mobile):
+# ---------------- V4 (B-3): admin/DM website payload ----------------
+_WEB_PALETTE = [NAVY, "#2E6FB7", "#158A5A", "#B57611", PURPLE, RED, "#0E7490", "#B45309",
+                "#7C3AED", "#0891B2", "#CA8A04", "#BE185D", "#15803D", "#1D4ED8", "#9A3412"]
+
+
+def _target_curve(tgt, n):
+    """Linear ramp from 0 to the day target across the open hours — the red target line."""
+    if tgt is None or not n:
+        return []
+    return [round(tgt * (i + 1) / n, 2) for i in range(n)]
+
+
+def _web_detail(sp):
+    """Map a calc.build_store payload into the exact shape web.py's detail view expects."""
+    n = len(sp["hours"]); s = sp["status"]; a = sp["aro"]; b = sp["big4"]; l = sp["lhpc"]
+    def cum(d):
+        return {"actual": d["actual"], "est": d["est"],
+                "target": d.get("target_curve") or _target_curve(d.get("tgt"), n),
+                "sofar": d["sofar"], "est_close": d["est_close"], "norm": d.get("norm"),
+                "pace": d.get("pace_pct"), "status": calc.st_pace(d.get("pace_pct")),
+                "tgt": d.get("tgt"), "tgtSrc": d.get("tgtSrc"), "wk": d.get("wk", []),
+                # F1: fleet/common split (present on net only; None for cars)
+                "fleet": d.get("fleet"), "nonfleet": d.get("nonfleet")}
+    return {"name": sp["name"], "id": sp["id"], "region": sp.get("region", ""), "open": sp.get("open", ""),
+            "now": sp["now"], "hours": sp["hours"],
+            "kpi": {"cars": round(sp["cars"]["sofar"]), "carsNorm": sp["cars"].get("norm"),
+                    "carsPace": sp["cars"].get("pace_pct"),
+                    "aro": a.get("sofar") or 0, "aroGap": a.get("gap_pct"), "aroTarget": a.get("target") or 125,
+                    "net": round(sp["net"]["sofar"]), "netNorm": sp["net"].get("norm"),
+                    "netPace": sp["net"].get("pace_pct"),
+                    "big4": b.get("pct") or 0, "lhpc": l.get("day") or 0,
+                    "carsStatus": s["cars"], "aroStatus": s["aro"], "netStatus": s["net"],
+                    "big4Status": s["big4"], "lhpcStatus": s["lhpc"]},
+            "cars": cum(sp["cars"]), "net": cum(sp["net"]),
+            "aro": {"run": a["run"], "sofar": a.get("sofar") or 0, "gap": a.get("gap_pct"),
+                    "target": a.get("target") or 125},
+            "big4": {"run": b["run"], "pct": b.get("pct") or 0, "units": b.get("units") or 0,
+                     "target": b.get("target"), "items": b.get("items", [])},
+            "lhpc": {"roll": l["roll"], "hours": l["hours"], "day": l.get("day") or 0,
+                     "now": l.get("now"), "target": l.get("target"), "variance": l.get("variance"),
+                     # H1: as-of-now cumulative totals for the "rolling math" box
+                     "totHours": l.get("totHours"), "totCars": l.get("totCars")},
+            "drivers": a.get("drivers", []), "movers": sp.get("drivers", []),
+            "ops": sp.get("ops", [])}
+
+
+@st.cache_data(ttl=300, show_spinner="Loading dashboard…")
+def build_web_payload(tier, allowed, scope_label, stamp):
+    now = dt.datetime.now(CENTRAL)
+    try:
+        tgts = datastore.get_targets()
+    except Exception:
+        tgts = {}
+    def _pull(s):
+        return s, fetch_today(s), fetch_history(s), fetch_days(s, 12)
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        fetched = list(ex.map(_pull, allowed))
+    today = now.strftime("%Y-%m-%d")
+    dates = [(now.date() - dt.timedelta(days=k)).isoformat() for k in range(7, 0, -1)]
+    labels = [dt.date.fromisoformat(d).strftime("%-m/%-d") for d in dates]
+    # task completions for the historical "Task" metric (one cheap cached read per date)
+    comp_by_date = {}
+    for dd in dates + [today]:
+        try:
+            comp_by_date[dd] = datastore.get_completions(dd)
+        except Exception:
+            comp_by_date[dd] = {}
+    rows, detail, hstores, newest, idx = [], {}, [], None, 0
+    for s, td, hist, daily in fetched:
+        try:
+            sp = calc.build_store(s, CITY[s], region_of(s), td, hist, now, tgts.get(s))
+            ar = calc.build_admin_row(s, CITY[s], td, hist, now)
+        except Exception as e:
+            print(f"[web] store {s}: {type(e).__name__}: {e}"); continue
+        rows.append({"id": s, "name": CITY[s], "region": region_of(s), "cars": ar["cars"],
+                     "net": ar["net"], "aro": ar["aro"], "lhpc": ar["lhpc"], "big4": ar["big4"],
+                     "pace": ar["pace"], "status": calc.st_pace(ar["pace"]), "heat": ar.get("heat"),
+                     # H4: per-store net pace so the overview can aggregate a Total-net vs-4wk %
+                     "netPace": sp["net"].get("pace_pct")})
+        d = _web_detail(sp)
+        d["messages"] = [{"from": m.get("from_user"), "body": m.get("body"),
+                          "when": _fmt_sent(m.get("sent_at"))}
+                         for m in datastore.get_inbox("store", s)]
+        # V3 score cards reused: today built fresh, yesterday+week from the hourly cache
+        # (~9 KB/store base64 -> ~0.13 MB for all 15, measured; safe to embed, cf. review M6).
+        # H2: today's task-completion % for the printable card's Task tile — same source as
+        # the dashboard Task KPI (TASKS_BY_DOW for today's weekday x datastore completions).
+        _tl_today = TASKS_BY_DOW.get(now.weekday(), [])
+        _dc_today = (comp_by_date.get(today) or {}).get(s, {})
+        _task_pct = round(len([t for t in _tl_today if t in _dc_today]) / len(_tl_today) * 100) if _tl_today else 0
+        try:
+            tb = base64.b64encode(scorecard_pdf.build_scorecard_pdf(
+                sp["name"], s, sp["date"], sp["asof"], _cards_today(sp, _task_pct))).decode()
+        except Exception as e:
+            print(f"[web scorecard today] {s}: {type(e).__name__}: {e}"); tb = ""
+        md = _multiday_b64(s, stamp[:13])
+        d["scorecards"] = {"today": tb, "yesterday": md.get("yesterday", ""),
+                           "week": md.get("week", ""), "ylabel": md.get("ylabel", "")}
+        detail[s] = d
+        for r in td:
+            ts = _parse_ts(r.get("pull_time"))
+            if ts and (newest is None or ts > newest):
+                newest = ts
+        summ = {x["date"]: x for x in calc.days_back_summaries(daily, 14, today) if x}
+        live = {"cars": sp["cars"]["sofar"], "net": sp["net"]["sofar"], "aro": sp["aro"].get("sofar"),
+                "big4": sp["big4"].get("pct"), "lhpc": sp["lhpc"].get("day")}
+        metrics = {k: [(summ.get(d) or {}).get(k) for d in dates] + [live[k]]
+                   for k in ("cars", "net", "aro", "big4", "lhpc")}
+        tvals, titems = [], []
+        for dd in list(dates) + [today]:
+            tl = TASKS_BY_DOW.get(dt.date.fromisoformat(dd).weekday(), [])
+            dc = (comp_by_date.get(dd) or {}).get(s, {})
+            di = [t for t in tl if t in dc]
+            tvals.append(round(len(di) / len(tl) * 100) if tl else 0); titems.append(di)
+        metrics["task"] = tvals
+        d["kpi"]["task"] = tvals[-1] if tvals else 0  # today's task completion % (6th KPI)
+        hstores.append({"id": s, "name": f"{CITY[s]} {s}",
+                        "color": _WEB_PALETTE[idx % len(_WEB_PALETTE)], "metrics": metrics,
+                        "taskItems": titems}); idx += 1
+    liveR = [r for r in rows if r["cars"] is not None]
+    tc = sum(r["cars"] for r in liveR); tn = sum(r["net"] or 0 for r in liveR)
+    b4R = [r for r in liveR if r["big4"] is not None and r["cars"]]
+    b4 = (sum(r["big4"] * r["cars"] for r in b4R) / sum(r["cars"] for r in b4R)) if b4R else None
+    paced = [r["pace"] for r in liveR if r["pace"] is not None]
+    netPaced = [r["netPace"] for r in liveR if r.get("netPace") is not None]
+    kpis = {"stores": len(rows), "cars": tc, "carsPace": round(sum(paced) / len(paced), 1) if paced else None,
+            "net": tn, "aro": round(tn / tc, 1) if tc else None, "big4": round(b4, 1) if b4 is not None else None,
+            # H4: Total-net vs-4wk % (avg of per-store net pace, mirrors carsPace) + reporting count
+            "netPace": round(sum(netPaced) / len(netPaced), 1) if netPaced else None,
+            "reporting": len(liveR), "total": len(rows)}
+    # H4: fleet 4-week drill-in — sum each store's same-weekday by-this-hour value by date
+    # (respects the current scope; the JS re-aggregates per region from per-store detail wk).
+    def _aggwk(kk):
+        byd = {}
+        for s in detail:
+            for x in (detail[s][kk].get("wk") or []):
+                dd = x.get("date")
+                if dd is None:
+                    continue
+                byd[dd] = byd.get(dd, 0) + (x.get("val") or 0)
+        # Recent same-weekdays, then DROP statistical outliers (MAD-based, calc._reject):
+        # a data-gap day (e.g. one where only a few stores reported) reads as an anomalously
+        # low fleet total and would deflate the average — exclude it so the bars + avg line
+        # reflect normal same-weekdays and reconcile with the KPI.
+        dates = sorted(byd)[-5:]
+        _, keep_idx = calc._reject([byd[d] for d in dates])
+        kept = [dates[i] for i in keep_idx][-4:]
+        return [{"date": d, "val": round(byd[d])} for d in kept]
+    kpiWk = {"cars": _aggwk("cars"), "net": _aggwk("net")}
+    # Overview pace = fleet total today vs the fleet 4-week average (same numbers the drill-in
+    # shows), so the KPI matches the graph. Replaces the old mean-of-per-store-pace, which
+    # could disagree with the totals (e.g. total up but avg store behind).
+    def _fleetpace(arr, total):
+        if not arr or not total:
+            return None
+        avg = sum(x["val"] for x in arr) / len(arr)
+        return round((total / avg - 1) * 100, 1) if avg else None
+    kpis["carsPace"] = _fleetpace(kpiWk["cars"], tc)
+    kpis["netPace"] = _fleetpace(kpiWk["net"], tn)
+    sourced = ""
+    stale = False
+    stale_min = None
+    if newest:
+        srcd = dt.datetime.fromtimestamp(newest.timestamp(), CENTRAL)
+        mins = int((now - srcd).total_seconds() // 60)
+        sourced = f"sourced {srcd.strftime('%-I:%M %p')} · {'just now' if mins <= 0 else str(mins) + 'm ago'}"
+        # D4: freshness — data older than 90 min is flagged stale in the header.
+        stale_min = max(0, mins)
+        stale = stale_min > 90
+    regions = (REGIONS if tier == "admin"
+               else {k: v for k, v in REGIONS.items() if any(x in allowed for x in v)})
+    o, c = HOURS[now.weekday()]
+    # D4: closed = current Central time is past the store's close hour. HOURS is keyed by
+    # weekday as (open, close); close hour is the same across all stores in a scope.
+    closed = now.hour >= c
+    heat_hours = [calc.hour_label(h) for h in range(o, c + 1)]
+    return {"tier": tier, "mode": "store" if tier == "store" else "full",
+            "scopeName": scope_label, "asof": now.strftime("%-I:%M %p"),
+            "date": now.strftime("%A, %b %-d %Y"),
+            "sourced": sourced, "stale": stale, "staleMin": stale_min, "closed": closed,
+            "kpis": kpis, "kpiWk": kpiWk, "regions": regions, "rows": rows, "detail": detail,
+            "heatHours": heat_hours,
+            "hist": {"days": labels, "today": "Today", "stores": hstores, "metric": "cars"}}
+
+
+# run_every=600 (10 min): the scraper is hourly, so this catches a new pull within
+# ~10 min while staying cheap. NOTE: st.fragment only supports a fixed INTERVAL, not a
+# wall-clock time, so we can't literally fire "5 min after the scraper"; the freshness
+# line/label shows the true last-sourced time regardless, so any staleness is visible.
+@_fragment(run_every=600)
+def _dashboard_view(tier, allowed, scope, mobile, startview="overview"):
     now = dt.datetime.now(CENTRAL)
     stamp = now.strftime("%Y-%m-%d-%H-%M")
-    payload = build_payload(tier, allowed, scope, stamp)
-    height = 6200 if mobile else 3200
-    components.html(dashboard.html(payload, mobile=mobile), height=height, scrolling=True)
+    # V4 (B-3d): every tier renders the website component. The native sidebar chooses which
+    # section it opens on (startView). Store logins get a store-locked view (their store only).
+    # dict() shallow-copies the cached payload so these per-view keys never mutate/poison
+    # the @st.cache_data entry (same pattern already used for startView).
+    payload = dict(build_web_payload(tier, allowed, scope, stamp))
+    payload["startView"] = startview
+    payload["mobile"] = False  # single desktop layout for all; movers/how-to-read always shown
+    components.html(web.html(payload), height=900, scrolling=True)
+
+
+# ---------------- V4 (D): historical performance (DM + admin, read-only) ----------------
+_HIST_METRICS = {"Cars": "cars", "Net revenue": "net", "ARO ($/car)": "aro",
+                 "Big 4 attach %": "big4", "LHPC (hrs/car)": "lhpc"}
+_HIST_TARGET = {"aro": ARO_TARGET, "lhpc": LHPC_TARGET, "big4": BIG4_GOAL}
+_HIST_FMT = {"cars": lambda v: f"{v:,.0f}", "net": lambda v: f"${v:,.0f}",
+             "aro": lambda v: f"${v:,.2f}", "big4": lambda v: f"{v:.1f}%", "lhpc": lambda v: f"{v:.2f}"}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _hist_rows(store, daystamp):
+    """~5 weeks of daily rows for one store, cached per day (daystamp = today's date)."""
+    return fetch_days(store, 35)
+
+
+def _history_section(role, user, mobile):
+    st.markdown("---")
+    st.markdown("#### Historical performance — last week vs the 4-week average")
+    opts = list(STORE_CODES) if role == "admin" else list(user["stores"])
+    labels = {s: f"{CITY.get(s, s)} #{s}" for s in opts}
+
+    mlabel = _picker(list(_HIST_METRICS), "Cars", "hist_metric", mobile)
+    metric = _HIST_METRICS[mlabel]
+    default = opts if role == "district" else opts[:5]
+    sel = st.multiselect("Stores", options=opts, default=default,
+                         format_func=lambda s: labels[s], key="hist_stores")
+    if not sel:
+        st.caption("Pick at least one store to chart."); return
+
+    today = dt.datetime.now(CENTRAL).strftime("%Y-%m-%d")
+    try:
+        import plotly.graph_objects as go
+    except Exception:
+        st.info("Charting library unavailable in this deployment."); return
+
+    fig = go.Figure()
+    table = []
+    fmt = _HIST_FMT.get(metric, lambda v: v)
+    for s in sel:
+        series = calc.weekly_series(_hist_rows(s, today), today, metric, weeks=5)
+        if not series:
+            continue
+        xs = [p["label"] for p in series]
+        ys = [p["value"] for p in series]
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=labels[s],
+                                 connectgaps=True))
+        last, base, pct = calc.week_vs_baseline(series)
+        table.append({"Store": labels[s],
+                      "Last week": fmt(last) if last is not None else "—",
+                      "4-wk avg": fmt(base) if base is not None else "—",
+                      "Δ vs 4-wk": (f"{pct:+.1f}%" if pct is not None else "—")})
+    tgt = _HIST_TARGET.get(metric)
+    if tgt is not None:
+        fig.add_hline(y=tgt, line_dash="dot", line_color=MUTE,
+                      annotation_text=f"target {fmt(tgt)}", annotation_position="top left")
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                      yaxis_title=mlabel, xaxis_title=None,
+                      plot_bgcolor="#FFFFFF", paper_bgcolor="rgba(0,0,0,0)")
+    fig.update_xaxes(showgrid=False); fig.update_yaxes(gridcolor="#E2E7EE")
+    st.plotly_chart(fig, use_container_width=True)
+    if table:
+        st.dataframe(table, use_container_width=True, hide_index=True)
+    st.caption("Weekly totals over the last 5 seven-day windows; ARO / Big 4 / LHPC are "
+               "volume-weighted across each week. Baseline = average of the 4 weeks before last week.")
+
+
+# ---------------- V4 (B-2): admin per-store targets editor (write path) ----------------
+_TGT_FIELDS = ([("cars_boost", "Cars boost %"), ("net_boost", "Net boost %"),
+                ("aro_target", "ARO target $"), ("lhpc_target", "LHPC target")]
+               + [("big4_" + n, n + " %") for n in BIG4_TARGETS])
+# effective defaults shown when a store hasn't customized a target (the historical goals)
+_TGT_DEFAULTS = {"cars_boost": 0.0, "net_boost": 0.0, "aro_target": float(ARO_TARGET),
+                 "lhpc_target": float(LHPC_TARGET),
+                 **{"big4_" + n: float(BIG4_TARGETS[n]) for n in BIG4_TARGETS}}
+
+
+def _task_toggle(store, today, task, key, label):
+    """on_change callback — fires once per toggle (no lost rapid clicks / rerun races)."""
+    try:
+        if st.session_state.get(key):
+            datastore.complete_task(store, today, task, label)
+        else:
+            datastore.uncomplete_task(store, today, task)
+        build_web_payload.clear()  # D3/D6: bust the display cache so the next render is fresh
+    except Exception as e:
+        st.session_state["_task_err"] = f"{type(e).__name__}: {e}"
+
+
+def _task_checklist(user):
+    """Store-login daily task panel (left column). Native checkboxes → task_completions."""
+    st.markdown("<span id='taskbox-marker'></span>", unsafe_allow_html=True)
+    store = user["code"]
+    now = dt.datetime.now(CENTRAL); today = now.strftime("%Y-%m-%d")
+    tasks = TASKS_BY_DOW.get(now.weekday(), [])
+    try:
+        done = datastore.get_completions(today).get(store, {})
+    except Exception:
+        done = {}
+    n = len(tasks); c = sum(1 for t in tasks if t in done)
+    st.markdown("#### Today's tasks")
+    st.caption(f"{DOW_FULL[now.weekday()]} · {c}/{n} done" + (f" · {round(c/n*100)}%" if n else ""))
+    if st.session_state.pop("_task_err", None):
+        st.error("A task didn't save — click it again.")
+    for i, t in enumerate(tasks):
+        k = f"tk_{store}_{today}_{i}"  # date in key so state resets each day
+        st.checkbox(t, value=(t in done), key=k,
+                    on_change=_task_toggle, args=(store, today, t, k, user.get("label")))
+
+
+def _store_messages(user):
+    """Store-login messages panel (right column, native so tops align with tasks/KPIs).
+    Read-only inbox for this store, tan box to match Today's tasks."""
+    st.markdown("<span id='msgbox-marker'></span>", unsafe_allow_html=True)
+    st.markdown("#### Messages")
+    try:
+        msgs = datastore.get_inbox("store", user["code"])
+    except Exception:
+        msgs = []
+    if not msgs:
+        st.caption("No messages yet.")
+        return
+    for m in msgs:
+        body = html.escape(m.get("body") or "")
+        frm = html.escape(m.get("from_user") or "")
+        when = _fmt_sent(m.get("sent_at"))
+        st.markdown(
+            f"<div class='smsg'><div class='smsg-b'>{body}</div>"
+            f"<div class='smsg-m'>{frm} · {when}</div></div>", unsafe_allow_html=True)
+
+
+def _daily_task_admin(user):
+    """Admin Daily task tab: stores (rows) x today's tasks (cols), green checks + % complete.
+    Rendered as a plain HTML table (no pandas Styler — Styler.applymap was removed upstream)."""
+    now = dt.datetime.now(CENTRAL); today = now.strftime("%Y-%m-%d"); wd = now.weekday()
+    tasks = TASKS_BY_DOW.get(wd, [])
+    # G5: DM sees only its own stores; admin sees all 15 (user["stores"] == STORE_CODES).
+    stores = list(user.get("stores") or STORE_CODES)
+    st.markdown("#### Daily task")
+    st.caption(f"{DOW_FULL[wd]} · {today} — green = complete")
+    try:
+        comp = datastore.get_completions(today)
+    except Exception:
+        comp = {}
+    def _pcol(p): return "#158A5A" if p >= 80 else ("#B57611" if p >= 50 else "#D0342C")
+    th = "".join(f"<th>{t}</th>" for t in tasks)
+    body = ""
+    for s in stores:
+        d = comp.get(s, {}); done = sum(1 for t in tasks if t in d)
+        pct = round(done / len(tasks) * 100) if tasks else 0
+        cells = "".join(('<td class="ok">&#10003;</td>' if t in d else "<td></td>") for t in tasks)
+        body += (f'<tr><td class="stn">{CITY[s]} #{s}</td>'
+                 f'<td style="color:{_pcol(pct)};font-weight:700">{pct}%</td>{cells}</tr>')
+    html = ("<style>table.dtm{border-collapse:collapse;font-size:.76rem;width:100%}"
+            "table.dtm th,table.dtm td{border:1px solid #E2E7EE;padding:5px 7px;text-align:center;white-space:nowrap}"
+            "table.dtm th{background:#F7F9FC;color:#5B6472;font-size:.62rem;text-transform:uppercase}"
+            "table.dtm td.stn,table.dtm th.stn{text-align:left;font-weight:600}"
+            "table.dtm td.ok{background:#E7F3EC;color:#158A5A;font-weight:800}"
+            ".dtwrap{overflow-x:auto}</style>"
+            f'<div class="dtwrap"><table class="dtm"><thead><tr><th class="stn">Store</th>'
+            f"<th>%</th>{th}</tr></thead><tbody>{body}</tbody></table></div>")
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _messages_admin(user):
+    """Admin/DM Messages tab: compose a one-way message to a single store + recent-sent list.
+    G5: DM is scoped to its own stores; admin keeps all 15."""
+    import pandas as pd
+    # G5: scope the compose picker + labels to the user's stores (DM = own; admin = all 15).
+    stores = list(user.get("stores") or STORE_CODES)
+    is_dm = user.get("role") == "district"
+    labels = {s: f"{CITY.get(s, s)} #{s}" for s in stores}
+    st.markdown("#### Messages")
+    st.caption("Send a message to one store. It shows on that store's scorecard (right side).")
+    store = st.selectbox("Store", stores, format_func=lambda s: labels.get(s, s), key="msg_store")
+    body = st.text_area("Message", key="msg_body", placeholder="")
+    name = st.text_input("Your name", key="msg_name", placeholder="John Doe")
+    if st.button("Send message", type="primary"):
+        if body.strip():
+            try:
+                datastore.send_message(identity.attribution(user, name), "store", body.strip(), to_store=store)
+                build_web_payload.clear()  # D3/D6: bust the display cache so store inboxes refresh
+                st.success(f"Sent to {labels[store]}.")
+            except Exception as e:
+                st.error(f"Couldn't send: {type(e).__name__}: {e}")
+        else:
+            st.warning("Write a message first.")
+    st.markdown("##### Recent messages")
+    st.caption("Each message has its own Delete (admin/DM only).")
+    try:
+        sent = datastore.get_sent(50)
+    except Exception:
+        sent = []
+    # G5: a DM only sees messages sent to its own stores; admin sees all.
+    if is_dm:
+        _own = {str(s) for s in stores}
+        sent = [m for m in sent if str(m.get("to_store")) in _own]
+    if not sent:
+        st.caption("No messages sent yet."); return
+    for m in sent:
+        mid = m.get("id")
+        to = labels.get(str(m.get("to_store")), m.get("to_store") or m.get("to_scope"))
+        c = st.columns([2.1, 2.4, 5, 1.1])
+        c[0].caption(_fmt_sent(m.get("sent_at")))
+        c[1].markdown(f"**{to}**")
+        c[2].markdown(f"{m.get('body','')}  \n<span style='color:#5B6472;font-size:.78rem'>"
+                      f"{m.get('from_user','')}</span>", unsafe_allow_html=True)
+        if mid is not None and c[3].button("Delete", key=f"del_{mid}"):
+            try:
+                datastore.delete_message(mid); build_web_payload.clear(); st.rerun()
+            except Exception as e:
+                st.error(f"Couldn't delete: {type(e).__name__}: {e}")
+
+
+def _targets_view(user):
+    """Read-only targets view with an Edit button (admin left-nav 'Targets' tab)."""
+    import pandas as pd
+    if st.session_state.get("tgt_editing"):
+        _targets_editor(user)
+        if st.button("Done — back to view"):
+            st.session_state["tgt_editing"] = False; st.rerun()
+        return
+    st.markdown("#### Store targets")
+    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and each "
+               "Big 4 item are absolute targets. Values shown are the current targets "
+               "(the standard goals where a store hasn't been customized).")
+    cur = datastore.get_targets()
+    rows = []
+    for s in STORE_CODES:
+        t = cur.get(s, {})
+        row = {"Store": f"{CITY.get(s, s)} #{s}"}
+        for key, lab in _TGT_FIELDS:
+            v = t.get(key)
+            row[lab] = v if v is not None else _TGT_DEFAULTS.get(key)
+        rows.append(row)
+    # height fits all 15 stores (header + 15 rows ≈ 35px each) so it doesn't scroll at 10
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True, height=568)
+    if st.button("Edit targets", type="primary"):
+        st.session_state["tgt_editing"] = True; st.rerun()
+
+
+def _targets_editor(user):
+    import pandas as pd
+    st.markdown("#### Edit store targets")
+    st.caption("Cars and Net are a % boost on each store's 4-week average. ARO $, LHPC, and each "
+               "Big 4 item are absolute targets. Cells show the current target — edit any value; "
+               "set a cell back to the standard goal to remove a customization.")
+    cur = datastore.get_targets()
+    rows = []
+    for s in STORE_CODES:
+        t = cur.get(s, {})
+        row = {"Store": f"{CITY.get(s, s)} #{s}", "_id": s}
+        for key, lab in _TGT_FIELDS:
+            v = t.get(key)
+            row[lab] = v if v is not None else _TGT_DEFAULTS.get(key)
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    edited = st.data_editor(df, key="targets_editor", hide_index=True,
+                            use_container_width=True, disabled=["Store"],
+                            height=568, column_config={"_id": None})
+    name = st.text_input("Your name (saved with each change)", key="tgt_name",
+                         placeholder="John Doe")
+    if st.button("Save targets", type="primary"):
+        who = identity.attribution(user, name); changes = 0
+        try:
+            for r in edited.to_dict("records"):
+                s = str(r.get("_id")); t = cur.get(s, {})
+                for key, lab in _TGT_FIELDS:
+                    v = r.get(lab); dflt = _TGT_DEFAULTS.get(key)
+                    if v == "" or (isinstance(v, float) and v != v):
+                        v = None
+                    v = dflt if v is None else float(v)
+                    shown = t.get(key); shown = float(shown) if shown is not None else dflt
+                    if v is None or shown is None or abs(v - shown) < 1e-9:
+                        continue  # unchanged from what was shown
+                    if dflt is not None and abs(v - dflt) < 1e-9:
+                        datastore.delete_target(s, key)  # back to standard goal
+                    else:
+                        datastore.set_target(s, key, v, who)
+                    changes += 1
+            if changes:
+                build_web_payload.clear()  # D3/D6: bust the display cache so new targets show
+            st.success(f"Saved {changes} change(s)." if changes else "No changes to save.")
+        except Exception as e:
+            st.error(f"Couldn't save targets: {type(e).__name__}: {e}")
 
 
 def main():
     if "auth" not in st.session_state:
         login_view(); return
     role, code = st.session_state.auth
-    if role == "store":
-        tier, allowed, scope = "store", [code], f"{CITY[code]} · #{code}"
-    elif role == "district":
-        name, ids = DISTRICTS[code]; tier, allowed, scope = "district", ids, f"{name} · {len(ids)} stores"
-    else:
-        tier, allowed, scope = "admin", STORE_CODES, "All Stores · 15"
+    # V4: resolve the current user once for write attribution + scope.
+    user = identity.resolve(role, code)
+    st.session_state["user"] = user
 
-    mobile = is_mobile()
-    if mobile:
-        st.markdown("<style>.stButton>button{padding:.4rem .35rem;font-size:.82rem;min-height:0}"
-                    "div[data-testid='stHorizontalBlock']{gap:.4rem}</style>", unsafe_allow_html=True)
+    mobile = is_mobile()  # always False now; retained only so `mobile`-flagged calls don't break
+    # V4: admin/DM run the full-width website component with ONE navy left nav (the native
+    # sidebar, styled). Trim page gutters; style the sidebar to match the product. Store: as-is.
+    if role == "store":
+        st.markdown("<style>"
+                    ".block-container{padding-top:.6rem!important}"
+                    # F3: top-align the 3 store columns so the tan task/message boxes and the
+                    # dashboard component (middle) all start on the same top line; zero the
+                    # stray top margins Streamlit adds to the first block in each column/iframe.
+                    "div[data-testid='stHorizontalBlock']{align-items:flex-start}"
+                    "[data-testid='column']>div,[data-testid='stColumn']>div{margin-top:0!important}"
+                    "[data-testid='column'] iframe,[data-testid='stColumn'] iframe{margin-top:0!important;display:block}"
+                    # tan boxes for the tasks (left) and messages (right) columns
+                    "[data-testid='column']:has(#taskbox-marker),[data-testid='stColumn']:has(#taskbox-marker),"
+                    "[data-testid='column']:has(#msgbox-marker),[data-testid='stColumn']:has(#msgbox-marker)"
+                    "{background:#FBF4E9;border:1px solid #E9D9BE;border-radius:12px;padding:14px 14px 8px}"
+                    # message cards inside the tan column
+                    ".smsg{background:#fff;border:1px solid #E9D9BE;border-radius:9px;padding:9px 11px;margin-bottom:8px}"
+                    ".smsg-b{font-size:.82rem;color:#0F172A;line-height:1.35}"
+                    ".smsg-m{font-size:.68rem;color:#8A6D3B;font-weight:700;margin-top:4px}"
+                    "</style>", unsafe_allow_html=True)
+    elif role in ("admin", "district"):
+        st.markdown("""<style>
+         .block-container{padding:.4rem .8rem 0!important;max-width:100%!important}
+         /* Base sidebar styling (all widths). */
+         [data-testid="stSidebar"],section[data-testid="stSidebar"]{background:#14273F!important}
+         [data-testid="stSidebar"] *{color:#fff}
+         /* D1: force the sidebar open ONLY on desktop (>=821px) so it can never disappear
+            with no way back (the bug Samuel hit twice). On mobile (<=820px) we do NOT force
+            it open — it stays a closable drawer/overlay so it can't underlap page content. */
+         @media (min-width:821px){
+           [data-testid="stSidebar"],section[data-testid="stSidebar"]{
+             width:212px!important;min-width:212px!important;transform:none!important;
+             visibility:visible!important;margin-left:0!important}
+           /* F9: on desktop the sidebar is force-pinned open (above), so the collapse/expand
+              arrow does nothing — hide it to remove the dead/confusing control. */
+           [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
+           [data-testid="collapsedControl"]{display:none!important}
+         }
+         /* F9: on mobile the sidebar is a closable drawer (NOT force-open, per D1), so the
+            reopen control MUST stay reachable to open it again after closing. */
+         @media (max-width:820px){
+           [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
+           [data-testid="collapsedControl"]{display:flex!important;visibility:visible!important}
+         }
+         .navbrand{font-weight:800;font-size:1.06rem;padding:8px 6px 16px;line-height:1.2}
+         .navbrand span{display:block;color:#9FB4CC;font-weight:500;font-size:.7rem;margin-top:3px}
+         [data-testid="stSidebar"] [role="radiogroup"]{gap:2px}
+         [data-testid="stSidebar"] [role="radiogroup"] label{padding:9px 12px;border-radius:8px;margin:1px 0;
+           cursor:pointer;font-weight:600;font-size:.9rem;color:#C6D3E4}
+         [data-testid="stSidebar"] [role="radiogroup"] label:hover{background:rgba(255,255,255,.08);color:#fff}
+         [data-testid="stSidebar"] [role="radiogroup"] label[data-checked="true"],
+         [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){background:#fff;color:#14273F}
+         [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) *{color:#14273F}
+         [data-testid="stSidebar"] [role="radiogroup"] div[data-testid="stMarkdownContainer"]{color:inherit}
+        </style>""", unsafe_allow_html=True)
 
     ok, msg = healthcheck()
     if not ok:
         st.warning("⚠️ Couldn't reach the data source just now — numbers below may be stale or empty. "
                    "Try Refresh in a minute. (This is different from a store simply not having opened yet.)")
 
-    # top controls: Refresh · Phone/Desktop · Guide · Log out. All re-run IN the session.
-    if mobile:
-        cref, cview, cg, clo = st.columns(4)
-    else:
-        _, cref, cview, cg, clo = st.columns([6, 1.3, 1.4, 1.3, 1.1])
+    # top controls: Refresh · Guide · Log out. All re-run IN the session. (The Phone/Desktop
+    # toggle was removed — there is now a single desktop layout for all devices.)
+    _, cref, cg, clo = st.columns([6, 1.4, 1.3, 1.1])
     with cref:
         if st.button("↻ Refresh", use_container_width=True):
             st.cache_data.clear(); st.rerun()
-    with cview:
-        if mobile:
-            if st.button("Desktop View", use_container_width=True):
-                st.query_params["view"] = "desktop"; st.rerun()
-        else:
-            if st.button("Phone View", use_container_width=True):
-                st.query_params["view"] = "phone"; st.rerun()
     with cg:
         if st.button("User Guide", use_container_width=True):
             _open_guide()
     with clo:
         if st.button("Log out", use_container_width=True):
             del st.session_state.auth; st.cache_data.clear(); st.rerun()
+
+    # V4 (A): entry-point deep links, no on-page selector. The tier comes from the login;
+    # ?scope= lets an admin/DM open a specific store or region directly by URL (each level
+    # has its own shareable URL). Clicking around inside the page uses the dashboard's own
+    # in-component nav (kept from V3); default (no param) = the tier's normal view.
+    try:
+        scope_str = st.query_params.get("scope", "") or ""
+    except Exception:
+        scope_str = ""
+    tier, allowed, scope = identity.resolve_scope(role, user, scope_str)
 
     # fallback guide (only when st.dialog isn't available)
     if not _dialog and st.session_state.get("_guide_open"):
@@ -284,7 +886,43 @@ def main():
             if st.button("Close guide"):
                 st.session_state["_guide_open"] = False; st.rerun()
 
-    _dashboard_view(tier, allowed, scope, mobile)
+    # V4 (B-3d): ONE navy left nav (native sidebar) — Overview / Store detail / Historical,
+    # plus Targets (admin only) BELOW Historical. Drives which section the website component
+    # starts on. Targets renders the native view+editor (saves go through the server).
+    startview = "overview"
+    if role in ("admin", "district") and tier in ("admin", "district"):
+        # G5: DM (district) also gets Daily task + Messages, scoped to its own stores.
+        # Targets stays admin-only.
+        items = (["Overview", "Store detail", "Historical"]
+                 + (["Daily task", "Targets", "Messages"] if role == "admin"
+                    else ["Daily task", "Messages"] if role == "district" else []))
+        with st.sidebar:
+            st.markdown("<div class='navbrand'>VantEdge Auto<span>Take 5 · Scorecard</span></div>",
+                        unsafe_allow_html=True)
+            section = st.radio("Navigation", items, label_visibility="collapsed", key="nav_section")
+        if section == "Targets":
+            _targets_view(user)
+            return
+        if section == "Messages":
+            _messages_admin(user)
+            return
+        if section == "Daily task":
+            _daily_task_admin(user)
+            return
+        startview = {"Overview": "overview", "Store detail": "detail", "Historical": "hist"}[section]
+
+    # V4 (C): store login gets the daily-task checklist in the LEFT column (native, so it can
+    # save), with the dashboard component on the right. Other tiers render full-width.
+    if role == "store":
+        left, mid, right = st.columns([1.05, 5.9, 1.15], gap="small")
+        with left:
+            _task_checklist(user)
+        with mid:
+            _dashboard_view(tier, allowed, scope, mobile, startview)
+        with right:
+            _store_messages(user)
+    else:
+        _dashboard_view(tier, allowed, scope, mobile, startview)
 
 
 if __name__ == "__main__":

@@ -29,9 +29,13 @@ def cum_by_hour(rows,key):
         if v is not None: out[h]=float(v)
     return out
 def to_per_period(cum):
+    # Cumulative daily metrics only ever rise, so a per-hour increment can't be negative.
+    # Floor at 0 so a bad/stale reading (e.g. a stray high value that later corrects down)
+    # can never render as negative cars/sales for an hour. Defense-in-depth behind the
+    # scraper's stale-report guard.
     if not cum: return {}
     pp={}; prev=0.0
-    for h in sorted(cum): pp[h]=cum[h]-prev; prev=cum[h]
+    for h in sorted(cum): pp[h]=max(0.0, cum[h]-prev); prev=cum[h]
     return pp
 
 # ---------- holidays ----------
@@ -146,11 +150,22 @@ def _cum_series(today_rows,hours,now_hour,key):
     sofar=cum[max(cum)] if cum else 0.0
     return arr,sofar
 
+def data_now_hour(today_rows,o,c):
+    """The 'current' hour anchored to DATA, not the wall clock: the last hour that actually
+    has a pull. The H:55 pull closes hour H, so the latest pull-hour is the last complete
+    hour. Matches the heat map and stops the graphs/pace/projection from comparing partial
+    data against a fuller-hour norm (the off-by-one that made stores look extra 'behind')."""
+    hrs=[row_hour(r) for r in (today_rows or [])]; hrs=[h for h in hrs if h is not None]
+    return min(max(max(hrs) if hrs else o, o), c)
+
 def count_metric(today_rows,hist,hours,weekday,now_hour,key,today_date):
-    sn=simple_norm(hist,weekday,key,today_date); wn=weighted_norm(hist,weekday,key,today_date)
+    wn=weighted_norm(hist,weekday,key,today_date)
     actual,sofar=_cum_series(today_rows,hours,now_hour,key)
     elapsed=[h for h in hours if h<=now_hour]; future=[h for h in hours if h>now_hour]
-    exp_now=sum(sn.get(h,0) for h in elapsed)
+    # Audit H-1/H-2: ONE baseline everywhere = the winsorized cumulative same-weekday average
+    # at this hour (what the store drill-in shows, same family as the overview). Replaces
+    # simple_norm, which summed per-hour means, ran high, and disagreed with the drill-in.
+    exp_now=wk_norm_at_hour(hist,weekday,key,now_hour,today_date)["avg"] or 0
     pace_pct=((sofar/exp_now)-1)*100 if exp_now else None
     wf=sum(wn.get(h,0) for h in elapsed)
     pf=_clamp(sofar/wf) if wf else 1.0
@@ -189,8 +204,34 @@ def big4_series(today_rows,hours,now_hour,latest):
     return {"run":run,"pct":round(ba["pct"],1) if ba["pct"] is not None else None,
             "target":BIG4_GOAL,"units":ba["units"],"items":items}
 
+def _labor_cum_guard(today_rows):
+    """H1: cumulative labor-hours by hour with pre-open/outlier readings dropped.
+    A labor reading is invalid if its pull has cars==0 (pre-open — the scraper emits a
+    garbage labor total then, e.g. 11,660 hrs) OR the value exceeds the day's final/max
+    sane cumulative (cumulative labor can only rise to the end-of-day total, so a reading
+    larger than the eventual total is a bad/stale scrape). Dropping these BEFORE
+    differencing keeps the per-hour hours bar sane; the rolling LHPC (which already skips
+    cars==0 hours) is unchanged."""
+    pairs=[]  # (hour, labor, cars) in pull order
+    for r in sorted(today_rows,key=lambda x:x.get("pull_time") or ""):
+        h=row_hour(r)
+        if h is None: continue
+        lv=get_metric(r,"labor_hours")
+        if lv is None: continue
+        try: cv=int(r.get("cars") or 0)
+        except (TypeError,ValueError): cv=0
+        pairs.append((h,float(lv),cv))
+    sane=[lv for _,lv,cv in pairs if cv]      # readings on pulls that have cars
+    cap=sane[-1] if sane else None            # end-of-day total = last sane cumulative
+    out={}
+    for h,lv,cv in pairs:
+        if cv==0: continue                    # pre-open reading
+        if cap is not None and lv>cap+1e-9: continue  # outlier above the day total
+        out[h]=lv
+    return out
+
 def lhpc_series(today_rows,hours,now_hour):
-    lcum=cum_by_hour(today_rows,"labor_hours"); ccum=cum_by_hour(today_rows,"cars")
+    lcum=_labor_cum_guard(today_rows); ccum=cum_by_hour(today_rows,"cars")
     lpp=to_per_period(lcum); cpp=to_per_period(ccum)
     hoursarr=[]; roll=[]; lc=0.0; ll=0.0
     for h in hours:
@@ -203,7 +244,11 @@ def lhpc_series(today_rows,hours,now_hour):
     for h in sorted(cpp):
         if h<=now_hour and cpp[h] and h in lpp: now=round(lpp[h]/cpp[h],2)
     day=round(lcum[max(lcum)]/ccum[max(ccum)],2) if (lcum and ccum and ccum[max(ccum)]) else None
-    return {"hours":hoursarr,"roll":roll,"now":now,"day":day,"target":LHPC_TARGET}
+    # H1: as-of-now cumulative totals for the "rolling math" box (totHours ÷ totCars = day).
+    tot_hours=round(lcum[max(lcum)],1) if lcum else None
+    tot_cars=ccum[max(ccum)] if ccum else None
+    return {"hours":hoursarr,"roll":roll,"now":now,"day":day,"target":LHPC_TARGET,
+            "totHours":tot_hours,"totCars":tot_cars}
 
 # ---------- dynamic "what's driving value" ----------
 def fmt_pct(v):
@@ -245,9 +290,9 @@ def build_drivers(weekday, cars, aro, net, big4, lhpc):
     return [{"t":t,"st":s,"m":m,"s":so} for (t,s,m,so,_) in out]
 
 # ---------- full builders ----------
-def build_store(store, city, region, today_rows, hist, now):
+def build_store(store, city, region, today_rows, hist, now, targets=None):
     weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1))
-    now_hour=min(max(now.hour,o),c)
+    now_hour=data_now_hour(today_rows,o,c)  # anchor to last completed pull, not wall clock
     latest=today_rows[-1] if today_rows else {}
     td=row_date(latest) if today_rows else None
     cars=count_metric(today_rows,hist,hours,weekday,now_hour,"cars",td)
@@ -258,6 +303,39 @@ def build_store(store, city, region, today_rows, hist, now):
     diff=differentials(latest.get("line_items"))
     dcars=latest.get("cars") or 0
     diff["pct"]=round(diff["units"]/dcars*100,1) if dcars else None
+    # V4 (B-3): targets, drill-in constituents, drivers. `targets=None` reproduces the flat
+    # defaults exactly, so the store-login view (which passes no targets) is unchanged.
+    cars["wk"]=wk_norm_at_hour(hist,weekday,"cars",now_hour,td)["days"]
+    net["wk"] =wk_norm_at_hour(hist,weekday,"net_sales",now_hour,td)["days"]
+    cars_fn=wk_norm_at_hour(hist,weekday,"cars",c,td)["avg"]
+    net_fn =wk_norm_at_hour(hist,weekday,"net_sales",c,td)["avg"]
+    tg=resolve_targets(targets,cars_fn,net_fn)
+    cars["tgt"]=tg["cars"]["value"]; cars["tgtSrc"]=tg["cars"]["source"]
+    net["tgt"]=tg["net"]["value"];   net["tgtSrc"]=tg["net"]["source"]
+    # Non-linear target line: normal-day cumulative shape scaled to the full-day target.
+    cars["target_curve"]=target_series(hist,weekday,"cars",hours,cars["tgt"],td)
+    net["target_curve"] =target_series(hist,weekday,"net_sales",hours,net["tgt"],td)
+    # F1: fleet vs common(retail) split of net. Fleet lives in the latest pull's `data`
+    # blob (fleets_amount is receipts-basis; fleets_count = ticket count). Split shown as
+    # %-of-net per Samuel. Basis caveat: fleets_amount is receipts-basis while net_sales
+    # excludes tax, so the two aren't a perfectly like-for-like base — % is directional.
+    _fdata=latest.get("data") or {}
+    _fleet_amt=float(_fdata.get("fleets_amount") or 0)
+    _fleet_cnt=int(_fdata.get("fleets_count") or 0)
+    _net_now=net["sofar"] or 0
+    _fleet_pct=round(100*_fleet_amt/_net_now,1) if _net_now else 0.0
+    net["fleet"]={"amt":round(_fleet_amt),"pct":_fleet_pct,"cnt":_fleet_cnt}
+    net["nonfleet"]={"amt":round(_net_now-_fleet_amt),"pct":round(100-_fleet_pct,1)}
+    aro["target"]=tg["aro"]["value"]; aro["tgtSrc"]=tg["aro"]["source"]
+    if aro["sofar"]: aro["gap_pct"]=round((aro["sofar"]/tg["aro"]["value"]-1)*100,1)
+    bb=latest.get("big4") or {}
+    for it in big4["items"]:
+        it["units"]=(bb.get(it["name"]) or {}).get("units") or 0
+        it["target"]=tg["big4"]["items"].get(it["name"],it["target"])
+    big4["target"]=tg["big4"]["goal"]
+    lhpc["target"]=tg["lhpc"]["value"]; lhpc["variance"]=lhpc_variance(lhpc["day"],tg["lhpc"]["value"])
+    aro_norm=(net_fn/cars_fn) if (net_fn and cars_fn) else None
+    aro["drivers"]=drivers_for_aro(latest,aro["sofar"],aro["target"],aro_norm,big4["items"],dcars)
     lab=labor_block(latest)
     ops=[["Differentials",str(diff["units"]),f"${diff['amount']:,.0f} · {(diff['pct'] or 0):.0f}% of cars"],
          ["Materials %",f"{latest.get('materials_pct') or 0:.0f}%","of net sales"],
@@ -277,10 +355,10 @@ def build_store(store, city, region, today_rows, hist, now):
             "ops":ops,"status":status,"drivers":drivers}
 
 def build_admin_row(store, city, today_rows, hist, now):
-    weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1)); now_hour=min(max(now.hour,o),c)
+    weekday=now.weekday(); o,c=HOURS[weekday]; hours=list(range(o,c+1)); now_hour=data_now_hour(today_rows,o,c)
     if not today_rows:
         return {"id":store,"name":city,"open":"—","cars":None,"net":None,"aro":None,"lhpc":None,
-                "big4":None,"diff":0,"diff_pct":None,"pace":None,"heat":[None]*(len(hours)+2),"breakdown":{}}
+                "big4":None,"diff":0,"diff_pct":None,"pace":None,"heat":[None]*len(hours),"breakdown":{}}
     latest=today_rows[-1]; td=row_date(latest)
     cm=count_metric(today_rows,hist,hours,weekday,now_hour,"cars",td)
     cars=latest.get("cars") or 0; net=latest.get("net_sales") or 0
@@ -288,10 +366,14 @@ def build_admin_row(store, city, today_rows, hist, now):
     dpct=round(dd["units"]/cars*100,1) if cars else None
     lh=lhpc_series(today_rows,hours,now_hour)
     cpp=to_per_period(cum_by_hour(today_rows,"cars"))
-    # Heat map with roll-up buckets: everything before the open hour and after the
-    # close hour is summed into its own bucket so early/late cars aren't hidden.
+    # Heat map: fold any pre-open cars into the OPENING-hour cell and any post-close cars
+    # into the CLOSING-hour cell (there is effectively no traffic outside store hours), so
+    # there are no separate Before/After rows -- the first/last hour absorbs them.
     before=sum(v for h,v in cpp.items() if h<o); after=sum(v for h,v in cpp.items() if h>c)
-    heat=[before if before else None]+[cpp.get(h) for h in hours]+[after if after else None]
+    heat=[cpp.get(h) for h in hours]
+    if heat:
+        if before: heat[0]=(heat[0] or 0)+before
+        if after:  heat[-1]=(heat[-1] or 0)+after
     # V3 (fixes review M1): admin "Big 4" is the overall attach % (units/cars), same as
     # the store view, vs the 53% goal -- differentials are NO LONGER folded into the
     # numerator (that was the >100% bug). Differentials reported separately.
@@ -327,3 +409,238 @@ def days_back_summaries(hist_rows, n, today_date):
         if d and d!=today_date: byd.setdefault(d,[]).append(r)
     dates=sorted(byd,reverse=True)[:n]
     return [day_summary(byd[d]) for d in dates]
+
+# ---------- V4 (D): weekly history (last week vs the last-4-week average) ----------
+def daily_components(hist_rows, today_date):
+    """Per calendar day (before today), the RAW pieces needed to aggregate a metric
+    correctly across a week: cars, net, Big 4 units, labor hours. Using raw pieces
+    (not the daily % KPIs) lets weekly ARO/Big4/LHPC be volume-weighted rather than a
+    mean-of-daily-ratios. One row per day = that day's last (most complete) snapshot."""
+    byd={}
+    for r in hist_rows:
+        d=row_date(r)
+        if d and d!=today_date: byd.setdefault(d,[]).append(r)
+    out={}
+    for d,rows in byd.items():
+        latest=sorted(rows,key=lambda r:r.get("pull_time") or "")[-1]
+        ba=big4_attach(latest); lab=labor_block(latest)
+        out[d]={"cars":latest.get("cars") or 0,"net":latest.get("net_sales") or 0,
+                "big4_units":ba["units"] or 0,"labor":lab.get("hours")}
+    return out
+
+def _week_value(metric,C,N,U,L,has_labor):
+    if metric=="cars": return round(C)
+    if metric=="net":  return round(N)
+    if metric=="aro":  return round(N/C,2) if C else None
+    if metric=="big4": return round(U/C*100,1) if C else None
+    if metric=="lhpc": return round(L/C,2) if (C and has_labor) else None
+    return None
+
+def weekly_series(hist_rows, today_date, metric, weeks=5):
+    """Aggregate `metric` into the last `weeks` seven-day windows ending the day before
+    `today_date`, oldest first (so the last entry is 'last week'). Ratio metrics are
+    volume-weighted across each window. Each entry: label, value, cars, days, is_last."""
+    comp=daily_components(hist_rows,today_date)
+    try: t=dt.date.fromisoformat(today_date)
+    except (ValueError,TypeError): return []
+    res=[]
+    for k in range(weeks-1,-1,-1):                 # oldest window first
+        end=t-dt.timedelta(days=7*k+1); start=t-dt.timedelta(days=7*k+7)
+        C=N=U=L=0.0; has_labor=False; ndays=0
+        for d,v in comp.items():
+            try: dd=dt.date.fromisoformat(d)
+            except (ValueError,TypeError): continue
+            if start<=dd<=end:
+                C+=v["cars"]; N+=v["net"]; U+=v["big4_units"]
+                if v["labor"] is not None: L+=v["labor"]; has_labor=True
+                ndays+=1
+        lab=f"{start:%-m/%-d}"
+        res.append({"label":("Last wk" if k==0 else lab),"range":f"{start:%-m/%-d}–{end:%-m/%-d}",
+                    "value":_week_value(metric,C,N,U,L,has_labor),
+                    "cars":round(C),"days":ndays,"is_last":k==0})
+    return res
+
+def week_vs_baseline(series):
+    """(last_week_value, avg_of_prior_weeks, pct_diff) from a weekly_series list."""
+    if not series: return None,None,None
+    last=series[-1]["value"]
+    prior=[s["value"] for s in series[:-1] if s["value"] is not None]
+    base=statistics.fmean(prior) if prior else None
+    pct=((last/base)-1)*100 if (last is not None and base) else None
+    return last, base, (round(pct,1) if pct is not None else None)
+
+# ================= V4 (B): store-view redesign + admin targets (pure logic) =================
+# See protocol/12. All additive; nothing here is wired into the payload yet (that's B-3),
+# so the current dashboard is unaffected until then.
+
+def winsorize(vals, k=MAD_K):
+    """Cap outliers to median +/- k*MAD (KEEP them, don't drop). Samuel's choice for the
+    4-week average: one anomalous same-weekday is dampened, not removed. Returns
+    (capped_values, flags) where flags[i] is True if vals[i] was capped."""
+    vals=list(vals)
+    if len(vals)<3:
+        return vals,[False]*len(vals)
+    med=statistics.median(vals)
+    mad=statistics.median([abs(x-med) for x in vals])
+    if mad==0:
+        return vals,[False]*len(vals)
+    lo,hi=med-k*mad,med+k*mad
+    out=[]; flags=[]
+    for x in vals:
+        if x<lo: out.append(lo); flags.append(True)
+        elif x>hi: out.append(hi); flags.append(True)
+        else: out.append(x); flags.append(False)
+    return out,flags
+
+def same_wd_cum(hist, weekday, key, now_hour, exclude_date=None):
+    """Up to 4 same-weekdays (holidays already excluded by _same_wd), each day's
+    CUMULATIVE value AT now_hour (the latest reading at or before now_hour). Newest first."""
+    out=[]
+    for date,rows in _same_wd(hist,weekday,exclude_date):
+        cum=cum_by_hour(rows,key)
+        elapsed=[h for h in cum if h<=now_hour]
+        out.append((date.isoformat(), round(cum[max(elapsed)],2) if elapsed else 0.0))
+    return out
+
+def wk_norm_at_hour(hist, weekday, key, now_hour, exclude_date=None):
+    """The '4-week average at this hour' the store sees: the WINSORIZED average of the 4
+    same-weekdays' cumulative-by-now values, plus the constituent days for the drill-in
+    bar chart. `days` shows the RAW value and whether it was capped for the average."""
+    days=same_wd_cum(hist,weekday,key,now_hour,exclude_date)
+    vals=[v for _,v in days]
+    capped,flags=winsorize(vals)
+    avg=statistics.fmean(capped) if capped else None
+    return {"avg":round(avg,1) if avg is not None else None,
+            "days":[{"date":d,"val":v,"capped":f} for (d,v),f in zip(days,flags)],
+            "n":len(days)}
+
+def resolve_targets(trow, cars_norm, net_norm):
+    """Per-store target values + derivation strings. `trow` = this store's saved settings
+    (may be empty/None); keys: cars_boost, net_boost (percent), aro_target, lhpc_target
+    (absolute), big4_<Item> (absolute % per item). `cars_norm`/`net_norm` = the full-day
+    4-week averages. Cars/Net = norm x (1+boost%); ARO/LHPC/Big4 = absolute overrides that
+    DEFAULT to the flat config targets when unset. `source` is the admin/DM-only derivation.
+    Projection never uses any of this (it stays on the raw 4-week average)."""
+    trow=trow or {}
+    def _boost(kkey,norm):
+        b=float(trow.get(kkey,0) or 0)
+        if norm is None: return None,None
+        return round(norm*(1+b/100)), f"4-wk avg {round(norm)} {'+' if b>=0 else ''}{b:g}%"
+    cars_v,cars_s=_boost("cars_boost",cars_norm)
+    net_v,net_s=_boost("net_boost",net_norm)
+    aro_set=trow.get("aro_target"); aro_v=float(aro_set) if aro_set not in (None,"") else ARO_TARGET
+    lh_set=trow.get("lhpc_target"); lh_v=float(lh_set) if lh_set not in (None,"") else LHPC_TARGET
+    items={}
+    for n in BIG4_TARGETS:
+        v=trow.get("big4_"+n)
+        items[n]=float(v) if v not in (None,"") else float(BIG4_TARGETS[n])
+    goal=sum(items.values())
+    return {
+        "cars":{"value":cars_v,"source":cars_s},
+        "net":{"value":net_v,"source":net_s},
+        "aro":{"value":round(aro_v,2),
+               "source":(f"${aro_v:g} set" if aro_set not in (None,"") else f"default ${ARO_TARGET:g}")},
+        "lhpc":{"value":round(lh_v,2),
+                "source":(f"{lh_v:g} set" if lh_set not in (None,"") else f"default {LHPC_TARGET:g}")},
+        "big4":{"items":items,"goal":round(goal,1),
+                "source":f"goal {goal:g}% = sum of item targets"},
+    }
+
+def lhpc_variance(rolling, target):
+    """Rolling-day LHPC minus target. Negative = leaner than target (good)."""
+    if rolling is None or target is None: return None
+    return round(rolling-target,2)
+
+def norm_profile(hist, weekday, key, hours, exclude_date=None):
+    """Normalized 0..1 cumulative shape of a normal day for this metric, from the simple
+    4-week same-weekday per-hour increments. Used to SHAPE the target line so it follows a
+    typical day instead of a straight ramp."""
+    sn=simple_norm(hist,weekday,key,exclude_date)
+    cum=[]; run=0.0
+    for h in hours:
+        run+=sn.get(h,0.0); cum.append(run)
+    last=cum[-1] if cum else 0.0
+    return [(c/last if last else 0.0) for c in cum]
+
+def target_series(hist, weekday, key, hours, tgt, exclude_date=None):
+    """Target line across the day = the normal-day cumulative shape scaled to end at the
+    full-day target (4-week avg x (1+boost)). NOT linear."""
+    if tgt is None: return []
+    prof=norm_profile(hist,weekday,key,hours,exclude_date)
+    return [round(p*tgt,2) for p in prof]
+
+def drivers_for_aro(latest, aro_sofar, aro_target, aro_norm, big4_items, cars):
+    """Rule-based, ranked explanation of WHY ARO sits where it does, using only data we
+    already have. Returns drivers sorted by severity (biggest first); the store view fills
+    its two ARO driver boxes from the top two. Each driver carries an adaptive message and
+    a small chart spec the component renders client-side on expand.
+
+    Levers considered: the lowest-attaching Big 4 item, discount+coupon load per car,
+    differential attach, and today's ticket vs its own 4-week norm. Messages adapt to
+    ahead/behind and degrade gracefully when a signal is missing."""
+    cars=cars or 0
+    out=[]
+    # 1) Big 4 attach — the lowest item drags ARO, or strong attach is padding it.
+    if big4_items:
+        worst=min(big4_items,key=lambda it:(it["attach"]-it["target"]))
+        best =max(big4_items,key=lambda it:(it["attach"]-it["target"]))
+        gap=worst["target"]-worst["attach"]
+        chart={"type":"bars","title":"Big 4 attach vs target",
+               "data":[{"name":it["name"],"attach":it["attach"],"target":it["target"]} for it in big4_items]}
+        if gap>2:
+            out.append({"key":"big4","title":"Big 4 attach","score":gap+4,
+                "status":"r" if gap>=worst["target"]*0.4 else "a",
+                "message":(f"{worst['name']} is attaching {worst['attach']:g}% vs a {worst['target']:g}% "
+                           f"target - the biggest Big 4 gap. Push-selling it is the clearest lever on $/car."),
+                "chart":chart})
+        else:
+            out.append({"key":"big4","title":"Big 4 attach","score":2,
+                "status":"g",
+                "message":(f"Big 4 is well attached - {best['name']} at {best['attach']:g}% "
+                           f"(target {best['target']:g}%) is padding the ticket. Keep it up."),
+                "chart":chart})
+    # 2) Discount + coupon load per car - a direct drag when high, a help when disciplined.
+    disc=float(latest.get("discounts") or 0); coup=float(latest.get("coupons") or 0)
+    per=((disc+coup)/cars) if cars else 0
+    chartgb={"type":"pair","title":"$ per car",
+             "data":[{"name":"Discounts","val":round(disc/cars,2) if cars else 0},
+                     {"name":"Coupons","val":round(coup/cars,2) if cars else 0}]}
+    if per>=4:
+        out.append({"key":"givebacks","title":"Discounts & coupons","score":per,
+            "status":"a" if per>=6 else "flat",
+            "message":(f"Discounts + coupons are running ${per:.0f}/car (${disc+coup:,.0f} today) - "
+                       f"that comes straight off ARO. Tightening approvals lifts the ticket."),"chart":chartgb})
+    elif per>0:
+        out.append({"key":"givebacks","title":"Discounts & coupons","score":2,"status":"g",
+            "message":(f"Give-backs are light at ${per:.0f}/car - discipline here is protecting ARO."),
+            "chart":chartgb})
+    # 3) Differential attach - a high-margin add that moves the ticket.
+    dd=differentials(latest.get("line_items")); dpct=(dd["units"]/cars*100) if cars else 0
+    chartd={"type":"gauge","title":"Differential % of cars","data":{"val":round(dpct,1),"target":DIFF_TARGET}}
+    if dpct<DIFF_TARGET:
+        out.append({"key":"diff","title":"Differentials","score":(DIFF_TARGET-dpct)+1,"status":"a",
+            "message":(f"Differentials on only {dpct:.0f}% of cars vs ~{DIFF_TARGET}% - each one is a "
+                       f"high-margin add. More differential sales raise the ticket."),"chart":chartd})
+    else:
+        out.append({"key":"diff","title":"Differentials","score":1.5,"status":"g",
+            "message":(f"Differentials on {dpct:.0f}% of cars (>= {DIFF_TARGET}% target) are lifting ARO."),
+            "chart":chartd})
+    # 4) Ancillary sales average.
+    asa=float(latest.get("asa") or 0)
+    if asa:
+        out.append({"key":"asa","title":"Ancillary sales","score":abs(asa-12)/4+0.5,
+            "status":"g" if asa>=12 else "a",
+            "message":(f"Ancillary sales average ${asa:.0f}/car - "
+                       f"{'a solid add on top of the core ticket' if asa>=12 else 'light; wiper/cabin-air/fluid upsells would lift ARO'}."),
+            "chart":{"type":"pair","title":"ASA","data":[{"name":"Today","val":round(asa,2)},{"name":"~target","val":12}]}})
+    # 5) Ticket vs its own 4-week norm - the summary lever.
+    if aro_sofar is not None and aro_norm:
+        gap=aro_norm-aro_sofar
+        out.append({"key":"ticket","title":"Ticket vs normal","score":abs(gap),
+            "status":"r" if gap>5 else ("a" if gap>0 else "g"),
+            "message":(f"Average ticket ${aro_sofar:.0f} is ${abs(gap):.0f} "
+                       f"{'below' if gap>0 else 'above'} the 4-week norm of ${aro_norm:.0f}."),
+            "chart":{"type":"pair","title":"ARO vs 4-week",
+                     "data":[{"name":"Today","val":round(aro_sofar,2)},{"name":"4-wk","val":round(aro_norm,2)}]}})
+    out.sort(key=lambda d:d["score"],reverse=True)
+    return out
